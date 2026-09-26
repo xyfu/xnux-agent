@@ -10,11 +10,17 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/xyfu/xnux-agent/internal/app"
+	"github.com/xyfu/xnux-agent/internal/cli"
+	"github.com/xyfu/xnux-agent/internal/ipc"
 )
 
 // Set at build time via -ldflags "-X main.version=… -X main.commit=…".
@@ -34,6 +40,14 @@ func main() {
 	if os.Getenv("GOMEMLIMIT") == "" {
 		debug.SetMemoryLimit(12 << 20)
 	}
+	// Installed as /usr/local/bin/xnux-agent with a symlink xnux: called as
+	// "xnux" (or "xnux-agent cli …") it is the local CLI (spec v1.1 delta 2).
+	if filepath.Base(os.Args[0]) == "xnux" {
+		os.Exit(runCLI(os.Args[1:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "cli" {
+		os.Exit(runCLI(os.Args[2:]))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	stop()
@@ -50,8 +64,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	check := fs.Bool("check", false, "self-check collectors and endpoint reachability")
 	stateDir := fs.String("state-dir", "/var/lib/xnux", "state and spool directory")
 	logDir := fs.String("log-dir", "/var/log/xnux", "agent.log and mirror file directory")
+	socket := fs.String("socket", envOr("XNUX_SOCKET", ipc.DefaultPath), "local socket the xnux CLI talks to")
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "usage: xnux-agent [run|version] [flags]\n\nflags:\n")
+		fmt.Fprintf(stderr, "usage: xnux-agent [run|version|cli …] [flags]\n\nflags:\n")
 		fs.PrintDefaults()
 	}
 
@@ -77,6 +92,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		Version:     version,
 		StateDir:    *stateDir,
 		LogDir:      *logDir,
+		Socket:      *socket,
 		Stdout:      stdout,
 		Stderr:      stderr,
 		StdoutTTY:   isTTY(stdout),
@@ -88,6 +104,33 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runCLI(args []string) int {
+	intr := make(chan os.Signal, 1)
+	signal.Notify(intr, syscall.SIGINT, syscall.SIGTERM)
+	socket := envOr("XNUX_SOCKET", ipc.DefaultPath)
+	conf := os.Getenv("XNUX_CONFIG")
+	if conf == "" {
+		conf = "/etc/xnux/agent.yaml"
+	}
+	lang := "en"
+	for _, k := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
+		if v := os.Getenv(k); v != "" {
+			if strings.HasPrefix(v, "zh") {
+				lang = "zh-CN"
+			}
+			break
+		}
+	}
+	return cli.Run(args, cli.Env{Stdout: os.Stdout, Stderr: os.Stderr, Stdin: os.Stdin, Socket: socket, ConfigPath: conf,
+		TTY: isTTY(os.Stdout), Lang: lang, Interrupt: intr, Width: func() int {
+			ws, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
+			if err != nil {
+				return 0
+			}
+			return int(ws.Col)
+		}})
+}
+
 func isTTY(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	if !ok {
@@ -95,4 +138,11 @@ func isTTY(w io.Writer) bool {
 	}
 	fi, err := f.Stat()
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }

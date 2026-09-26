@@ -51,19 +51,34 @@ func TestExampleFileParses(t *testing.T) {
 
 func TestValidation(t *testing.T) {
 	cases := map[string]string{
-		"missing token":  `endpoint: "https://x"`,
 		"bad token":      "token: abc\nendpoint: https://x",
 		"bad endpoint":   "token: xat_1\nendpoint: ftp://x",
 		"interval range": minimal + "interval_seconds: 5",
 		"flush range":    minimal + "flush_seconds: 500",
 		"bad regex":      minimal + "sanitize:\n  extra_patterns: ['(']",
 		"unknown field":  minimal + "bogus: 1",
-		"empty":          "",
 	}
 	for name, y := range cases {
 		if _, err := Parse([]byte(y)); err == nil {
 			t.Errorf("%s: want error", name)
 		}
+	}
+}
+
+// Without a token the agent runs standalone (spec v1.1 delta 2).
+func TestStandalone(t *testing.T) {
+	for _, y := range []string{"", `endpoint: "https://x"`} {
+		c, err := Parse([]byte(y))
+		if err != nil || !c.Standalone() || c.Endpoint == "" {
+			t.Errorf("%q: %+v %v", y, c, err)
+		}
+	}
+	c, warns, err := Load(filepath.Join(t.TempDir(), "missing.yaml"))
+	if err != nil || !c.Standalone() || len(warns) != 1 {
+		t.Errorf("missing file: %v %v", warns, err)
+	}
+	if c, _ := Parse([]byte(minimal)); c.Standalone() {
+		t.Error("token given, still standalone")
 	}
 }
 

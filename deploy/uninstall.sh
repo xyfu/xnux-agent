@@ -2,7 +2,7 @@
 # Removes the Xnux agent installed by install.sh.
 #
 #   curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/uninstall.sh | sudo sh
-#   … | sudo sh -s -- --purge     # also delete config, state, logs and the xnux user
+#   … | sudo sh -s -- --purge     # also delete config, state, logs, the xnux user and group
 set -eu
 
 PURGE=0
@@ -30,11 +30,13 @@ fi
 rm -f /etc/systemd/system/xnux-agent.service
 if [ -d /run/systemd/system ]; then systemctl daemon-reload || true; fi
 rm -f /usr/local/bin/xnux-agent
+[ -L /usr/local/bin/xnux ] && rm -f /usr/local/bin/xnux
 echo "xnux: agent stopped and removed"
 
 if [ "$PURGE" = 1 ]; then
 	rm -rf /etc/xnux /var/lib/xnux /var/log/xnux
 	if id xnux >/dev/null 2>&1; then userdel xnux 2>/dev/null || deluser xnux 2>/dev/null || true; fi
+	if getent group xnux >/dev/null 2>&1; then groupdel xnux 2>/dev/null || delgroup xnux 2>/dev/null || true; fi
 	echo "xnux: config, state and logs deleted"
 else
 	echo "xnux: kept /etc/xnux, /var/lib/xnux and /var/log/xnux (use --purge to delete them)"

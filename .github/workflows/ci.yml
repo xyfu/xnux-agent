@@ -44,13 +44,17 @@ jobs:
 
   resources:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [connected, standalone]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: RSS and idle CPU envelope (F1-9)
-        run: DURATION=180 scripts/agent-resource-check.sh
+      - name: RSS and idle CPU envelope (F1-9, ${{ matrix.mode }})
+        run: MODE=${{ matrix.mode }} DURATION=180 scripts/agent-resource-check.sh
 
   relay:
     runs-on: ubuntu-latest

@@ -25,12 +25,19 @@ HIDE_HOSTNAME=0
 CA_FILE=""
 LEAST_PRIV=0
 NO_START=0
+ADD_USER=""
+PROMPT=1
+CLI=/usr/local/bin/xnux
 
 usage() {
 	cat <<'EOF'
-Usage: install.sh --token TOKEN [options]
+Usage: install.sh [--token TOKEN] [options]
 
-  --token TOKEN        agent token from the console (xat_…); optional when upgrading
+  Without a token the agent runs standalone: a local black box ("xnux top",
+  "xnux events", …) that opens no network connection at all. Add a token
+  later with "sudo xnux connect --token xat_…".
+
+  --token TOKEN        agent token from the Xnux console (xat_…); uploads to Xnux
   --endpoint URL       where to send data: the server, or your Cloudflare Worker
                        (default https://ingest.xnux.net)
   --version vX.Y.Z     release to install (default: latest)
@@ -43,6 +50,9 @@ Usage: install.sh --token TOKEN [options]
   --least-privilege    run as the unprivileged "xnux" user with only the
                        capabilities it needs, instead of root
   --no-start           install but do not start the service
+  --add-user USER      let USER run the xnux CLI without sudo (group "xnux");
+                       by default the script asks about the user who ran sudo
+  --no-prompt          ask nothing
   -h, --help           this help
 EOF
 }
@@ -69,6 +79,9 @@ while [ $# -gt 0 ]; do
 	--hide-hostname) HIDE_HOSTNAME=1; shift ;;
 	--least-privilege) LEAST_PRIV=1; shift ;;
 	--no-start) NO_START=1; shift ;;
+	--add-user) ADD_USER="${2:-}"; shift 2 ;;
+	--add-user=*) ADD_USER="${1#*=}"; shift ;;
+	--no-prompt) PROMPT=0; shift ;;
 	-h | --help) usage; exit 0 ;;
 	*) usage >&2; die "unknown option: $1" ;;
 	esac
@@ -99,11 +112,9 @@ fi
 if [ "$DRY_RUN" = 0 ] && [ "$(id -u)" != 0 ]; then
 	die "run as root (sudo sh -s -- …), or add --dry-run to only preview"
 fi
-if [ "$DRY_RUN" = 1 ] && [ -z "$TOKEN" ]; then
-	TOKEN="xat_dryrun_preview_only_0000"
-fi
-if [ "$DRY_RUN" = 0 ] && [ -z "$TOKEN" ] && [ ! -f "$CONF" ]; then
-	die "--token is required for a new installation"
+if [ -n "$ADD_USER" ]; then
+	printf '%s' "$ADD_USER" | grep -Eq '^[a-z_][a-z0-9_.-]*[$]?$' || die "--add-user: not a user name"
+	id "$ADD_USER" >/dev/null 2>&1 || die "--add-user: no user $ADD_USER"
 fi
 
 if command -v curl >/dev/null 2>&1; then
@@ -157,7 +168,11 @@ write_config() { # $1 = path
 	umask 077
 	{
 		echo "# Written by install.sh; see https://github.com/$REPO/blob/main/deploy/agent.yaml.example"
-		echo "token: \"$TOKEN\""
+		if [ -n "$TOKEN" ]; then
+			echo "token: \"$TOKEN\""
+		else
+			echo "# No token: standalone, nothing is uploaded. Connect with: sudo xnux connect --token xat_…"
+		fi
 		echo "endpoint: \"${ENDPOINT:-https://ingest.xnux.net}\""
 		if [ "$HIDE_HOSTNAME" = 1 ]; then echo "hide_hostname: true"; fi
 		if [ -n "$CA_FILE" ]; then
@@ -178,7 +193,23 @@ fi
 install -d -m 0755 "$(dirname "$BIN")"
 install -m 0755 "$TMP/$NAME" "$BIN.new"
 mv -f "$BIN.new" "$BIN"
-say "installed $BIN ($("$BIN" version))"
+ln -sf "$BIN" "$CLI"
+say "installed $BIN ($("$BIN" version)) and the $CLI command"
+
+# The "xnux" group may use the CLI (the agent's socket is 0660 root:xnux).
+if ! getent group xnux >/dev/null 2>&1; then
+	groupadd --system xnux 2>/dev/null || addgroup --system xnux >/dev/null 2>&1 || say "could not create the xnux group; use the CLI with sudo"
+fi
+if [ -z "$ADD_USER" ] && [ "$PROMPT" = 1 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ] && [ -r /dev/tty ] &&
+	! id -nG "$SUDO_USER" 2>/dev/null | tr ' ' '\n' | grep -qx xnux; then
+	printf 'xnux: let %s run "xnux top", "xnux events"… without sudo (join the xnux group)? [y/N] ' "$SUDO_USER" >/dev/tty
+	read -r answer </dev/tty || answer=""
+	case "$answer" in y | Y | yes) ADD_USER="$SUDO_USER" ;; esac
+fi
+if [ -n "$ADD_USER" ] && getent group xnux >/dev/null 2>&1; then
+	usermod -aG xnux "$ADD_USER" 2>/dev/null || adduser "$ADD_USER" xnux >/dev/null 2>&1 || true
+	say "$ADD_USER is in the xnux group (takes effect at the next login)"
+fi
 
 install -d -m 0700 "$CONF_DIR"
 if [ ! -f "$CONF" ]; then
@@ -188,7 +219,11 @@ else
 	# Upgrade: keep the user's config, only replace what was passed.
 	cp -p "$CONF" "$CONF.bak"
 	if [ -n "$TOKEN" ]; then
-		sed -i "s|^token:.*|token: \"$TOKEN\"|" "$CONF"
+		if grep -q '^token:' "$CONF"; then
+			sed -i "s|^token:.*|token: \"$TOKEN\"|" "$CONF"
+		else
+			echo "token: \"$TOKEN\"" >>"$CONF"
+		fi
 	fi
 	if [ -n "$ENDPOINT" ]; then
 		if grep -q '^endpoint:' "$CONF"; then
@@ -225,8 +260,8 @@ if [ "$LEAST_PRIV" = 1 ]; then
 	[ "$SYSTEMD_VER" -ge 229 ] || die "--least-privilege needs systemd 229 or newer (this host has $SYSTEMD_VER)"
 	if ! id xnux >/dev/null 2>&1; then
 		NOLOGIN="$(command -v nologin || echo /bin/false)"
-		useradd --system --no-create-home --home-dir /nonexistent --shell "$NOLOGIN" xnux 2>/dev/null ||
-			adduser --system --no-create-home --home /nonexistent --shell "$NOLOGIN" xnux ||
+		useradd --system --no-create-home --home-dir /nonexistent --shell "$NOLOGIN" -g xnux xnux 2>/dev/null ||
+			adduser --system --no-create-home --home /nonexistent --shell "$NOLOGIN" --ingroup xnux xnux ||
 			die "could not create the xnux user"
 	fi
 	chown xnux "$CONF_DIR" "$CONF"
@@ -259,6 +294,9 @@ ProtectHome=read-only
 ReadWritePaths=/var/lib/xnux /var/log/xnux
 StateDirectory=xnux
 LogsDirectory=xnux
+# The xnux CLI's socket, /run/xnux/agent.sock (0660, group xnux).
+RuntimeDirectory=xnux
+RuntimeDirectoryMode=0755
 MemoryMax=64M
 CPUQuota=10%
 EOF
@@ -310,11 +348,28 @@ fi
 
 UNINSTALL_URL="$BASE_URL/uninstall.sh"
 
-cat <<EOF
+if grep -q '^token:' "$CONF"; then
+	cat <<EOF
 
+  Live view:               xnux top
+  Local events:            xnux events        (xnux event ID for one in full)
   Preview what it sends:   sudo $BIN --dry-run --once
-  What it sent last:       sudo cat /var/log/xnux/last_outgoing_payload.json
+  What it sent last:       xnux payload --last
   Logs:                    journalctl -u xnux-agent
   Uninstall:               curl -fsSL $UNINSTALL_URL | sudo sh
 
 EOF
+else
+	cat <<EOF
+
+  Standalone: recording locally, nothing leaves this machine.
+
+  Live view:               xnux top
+  Local events:            xnux events        (xnux event ID for one in full)
+  Last 24 hours:           xnux history
+  Health and collectors:   xnux status
+  Upload to Xnux later:    sudo xnux connect --token xat_…
+  Uninstall:               curl -fsSL $UNINSTALL_URL | sudo sh
+
+EOF
+fi

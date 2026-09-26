@@ -1,6 +1,6 @@
 # xnux-agent 探针
 
-已实现：资源指标采集、脱敏屏障、批量上报与断网缓冲、dry-run 与镜像文件（阶段 1）；现场事件捕获：服务崩溃、内核事件、安全日志、可疑进程巡检、现场快照（阶段 4）。
+已实现：资源指标采集、脱敏屏障、批量上报与断网缓冲、dry-run 与镜像文件（阶段 1）；现场事件捕获：服务崩溃、内核事件、安全日志、可疑进程巡检、现场快照（阶段 4）；本地黑匣子：独立模式、本地存储、`xnux` 命令行、connect / disconnect 热切换（阶段 11，用户说明见 [standalone.md](standalone.md)）。
 
 ## 命令
 
@@ -12,6 +12,8 @@
 | `--print-config` | 打印生效配置，token 只显示末 4 位 |
 | `--check` | 自检各采集器与 endpoint 连通性 |
 | `--state-dir` / `--log-dir` | 覆盖默认的 `/var/lib/xnux`、`/var/log/xnux` |
+| `--socket` | 命令行 Socket，默认 `/run/xnux/agent.sock`（也可用环境变量 `XNUX_SOCKET`） |
+| `cli …` | 等同于 `xnux …`（以 `xnux` 名字调用时即为命令行） |
 | `version` | 版本、commit、Go 版本 |
 
 `--dry-run` 在终端里着色：键名青色、数值黄色、脱敏替换符红底白字；管道输出时为纯 JSON，摘要行写到 stderr，便于 `| jq`。
@@ -23,7 +25,7 @@
 | 会发什么 | `xnux-agent --dry-run --once` |
 | 刚才发了什么 | `cat /var/log/xnux/last_outgoing_payload.json`；`mirror_history: N` 保留最近 N 条到 `/var/log/xnux/outgoing/` |
 | 服务端收到的是否一致 | `last_outgoing_payload.sha256` 是原始（压缩前）字节的 sha256，与审计台显示的哈希对比 |
-| 二进制是否对应源码 | 可复现构建，见 [development.md](development.md) |
+| 二进制是否对应源码 | 可复现构建，见 [install.md](install.md#校验二进制与源码一致) |
 
 ## 脱敏规则
 
@@ -111,10 +113,23 @@ auth.log/journal ┼─► 规则引擎（清洗 → 安全状态机 → 防抖�
 - 全新或损坏的 state.json 从当前 Unix 毫秒开始编号，保证重装后的 seq 高于服务端已记录的值（服务端按最大 seq 去重）。
 - state.json 内容不变时不重复写盘。
 
+## 本地黑匣子（阶段 11）
+
+- 进程模型：`app` 在 `loop` 里打开本地存储（`internal/localstore`：事件 JSONL + 指标环形文件）和 Socket 服务（`internal/ipc`）；sender 只在有 token 时由 `connect()` 建立，独立模式下 batcher 的输出只保留最近一份（`xnux payload --next`），不建 spool、不发任何请求。
+- 热重载：`xnux connect / disconnect` 改写 `/etc/xnux/agent.yaml`（保持 0600，只替换顶层键）后发 `reload`；守护进程重读配置，token、endpoint、proxy、TLS 变化时拆掉旧 sender、复用 spool 建新的，并立即刷出一份注册载荷，其余采集不中断。
+- Socket：0660、属组 `xnux`（组不存在时仅 root 可用）；非组内用户连接得到 EACCES，命令行提示加入 `xnux` 组。请求 / 响应都是一行 JSON；单行请求超过 64 KB 即断开，同时最多 8 个连接，空闲 5 分钟断开。
+- 本地健康度（`internal/localhealth`）用与服务端相同的 `xnux-shared/health` 算法：输入取最近 1 小时的分钟记录和 24 小时内事件（24 小时内的事件视为未恢复）；最近 1 小时不足 50 分钟数据时显示 "collecting"。
+- CLI 资源：`xnux top` 每 2 秒一次 IPC，自身 CPU 约 0.15%。
+
+与规格的差异：
+
+- systemd unit 未把 `/run/xnux` 加进 `ReadWritePaths`：`RuntimeDirectory=xnux` 在 `ProtectSystem=strict` 下本来就可写，且目录在启动前才创建，写进 `ReadWritePaths` 反而会在目录缺失时启动失败。
+- 规格要求安装脚本"询问是否把当前 sudo 用户加入"；只有从终端交互运行（`/dev/tty` 可读）且存在 `SUDO_USER` 时才会问，`curl | sudo sh` 在 CI 中不会卡住。
+
 ## 资源基准（F1-9）
 
 ```sh
 DURATION=120 scripts/agent-resource-check.sh
 ```
 
-在本地假 ingest 上运行探针并采样。开发环境（4 核 VM）实测：阶段 1 时 VmRSS 约 12.4 MB；阶段 4 开启全部事件采集器后约 13.5 MB，平均 CPU 0.012%；单次采样约 15 µs、0 分配。CI 每次跑 180 秒。阶段 7 在 6 个发行版的容器中各采样 60 秒：VmRSS 11.7–13.7 MB；24 小时测量见 [release-checklist.md](release-checklist.md)。
+在本地假 ingest 上运行探针并采样。开发环境（4 核 VM）实测：阶段 1 时 VmRSS 约 12.4 MB；阶段 4 开启全部事件采集器后约 13.5 MB，平均 CPU 0.012%；单次采样约 15 µs、0 分配。CI 每次跑 180 秒。阶段 7 在 6 个发行版的容器中各采样 60 秒：VmRSS 11.7–13.7 MB。阶段 11 后 CI 分别跑上报与独立两种模式（独立模式每分钟再调一次 `xnux status`），开发环境实测：上报 13.7 MB / 0.029%，独立 12.9 MB / 0.035%。

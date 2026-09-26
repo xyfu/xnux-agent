@@ -9,6 +9,8 @@ github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 h1:1EYB5IzjZawrrnELUi78f9fPu57Hu
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.3/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=
 github.com/xyfu/xnux-shared v0.0.0-20260926183731-1e1cefdf5a55 h1:L0cXXLyPghKOjZufkju/dwVUnvxwJNWrP8tZFk4icVE=
 github.com/xyfu/xnux-shared v0.0.0-20260926183731-1e1cefdf5a55/go.mod h1:gqERfnHIFAS0pOLnEJPOeGdjfKlVk2h6I/ASbfp+DNo=
+github.com/xyfu/xnux-shared v0.0.0-20260926185448-e1ed87d95b96 h1:X4+QzCyp98W0uOoerGyRgLi2yCf1CGq3iV9UIck2O0M=
+github.com/xyfu/xnux-shared v0.0.0-20260926185448-e1ed87d95b96/go.mod h1:gqERfnHIFAS0pOLnEJPOeGdjfKlVk2h6I/ASbfp+DNo=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
 go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
 golang.org/x/sys v0.48.0 h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=

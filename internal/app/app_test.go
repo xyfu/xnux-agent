@@ -55,8 +55,14 @@ func setup(t *testing.T, endpoint string) Options {
 	if err := os.WriteFile(cfg, []byte(y), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// Unix socket paths are short (108 bytes): not under t.TempDir().
+	sock, err := os.MkdirTemp("", "xa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sock) })
 	return Options{ConfigPath: cfg, Version: "1.0.0-test", StateDir: filepath.Join(dir, "lib"),
-		LogDir: filepath.Join(dir, "log"), Stdout: io.Discard, Stderr: io.Discard}
+		LogDir: filepath.Join(dir, "log"), Stdout: io.Discard, Stderr: io.Discard, Socket: filepath.Join(sock, "a.sock")}
 }
 
 func TestOnceDeliversAndMirrors(t *testing.T) {

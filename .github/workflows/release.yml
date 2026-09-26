@@ -40,8 +40,13 @@ jobs:
             cosign sign-blob --yes --output-signature "$f.sig" --output-certificate "$f.pem" "$f"
           done
 
+      - name: release notes
+        run: sed "s/@VERSION@/${VERSION}/g" docs/release-notes.md > release-notes.md
+
       - uses: softprops/action-gh-release@v2
         with:
+          body_path: release-notes.md
+          generate_release_notes: true
           tag_name: ${{ env.VERSION }}
           target_commitish: ${{ github.sha }}
           prerelease: ${{ contains(env.VERSION, '-') }}

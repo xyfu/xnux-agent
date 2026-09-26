@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/xyfu/xnux-shared/proto"
@@ -24,6 +26,8 @@ import (
 	"github.com/xyfu/xnux-agent/internal/collect"
 	"github.com/xyfu/xnux-agent/internal/config"
 	"github.com/xyfu/xnux-agent/internal/dryrun"
+	"github.com/xyfu/xnux-agent/internal/ipc"
+	"github.com/xyfu/xnux-agent/internal/localstore"
 	"github.com/xyfu/xnux-agent/internal/mirror"
 	"github.com/xyfu/xnux-agent/internal/procfs"
 	"github.com/xyfu/xnux-agent/internal/raw"
@@ -65,6 +69,9 @@ type Options struct {
 	StateDir string
 	LogDir   string
 	Root     string
+	// Socket is where the xnux CLI reaches the daemon (spec v1.1 delta 2);
+	// default /run/xnux/agent.sock.
+	Socket string
 }
 
 func (o *Options) defaults() {
@@ -76,6 +83,9 @@ func (o *Options) defaults() {
 	}
 	if o.Root == "" {
 		o.Root = "/"
+	}
+	if o.Socket == "" {
+		o.Socket = ipc.DefaultPath
 	}
 	if o.Stdout == nil {
 		o.Stdout = os.Stdout
@@ -160,13 +170,25 @@ type agent struct {
 	barrier *sanitize.Barrier
 	host    proto.Host
 
-	st       *state.Store
-	batcher  *batch.Batcher
-	sender   *sender.Sender
-	spool    *spool.Spool
-	emit     func(sanitize.SanitizedPayload)
-	lastEmit time.Time
-	sentHost proto.Host
+	st         *state.Store
+	batcher    *batch.Batcher
+	sender     *sender.Sender
+	stopSender context.CancelFunc
+	senderDone chan struct{}
+	spool      *spool.Spool
+	mirror     *mirror.Mirror
+	emit       func(sanitize.SanitizedPayload)
+	lastEmit   time.Time
+	sentHost   proto.Host
+
+	// The local black box (spec v1.1 delta 2), daemon mode only.
+	local   *localstore.EventLog
+	mring   *localstore.Ring
+	reload  chan chan error
+	started time.Time
+	view    atomic.Pointer[view]
+	localMu sync.Mutex
+	shared  localState
 
 	sampleErrors int
 
@@ -227,16 +249,8 @@ func (a *agent) run(ctx context.Context) error {
 	a.records = make(chan raw.Record, 256)
 	a.snapped = make(chan proto.Event, 64)
 
-	a.batcher = batch.New(batch.Options{
-		Barrier:      a.barrier,
-		NextSeq:      a.st.NextSeq,
-		AgentVersion: a.o.Version,
-		MachineFP:    machineFP(a.o.Root, a.cfg.Token, a.host.Hostname),
-		Diag:         a.diag,
-	})
+	a.newBatcher()
 
-	senderCtx, stopSender := context.WithCancel(context.Background())
-	senderDone := make(chan struct{})
 	if a.o.DryRun {
 		summary := a.o.Stderr
 		if a.o.StdoutTTY {
@@ -244,7 +258,6 @@ func (a *agent) run(ctx context.Context) error {
 		}
 		pr, err := dryrun.New(a.o.Stdout, summary, a.o.StdoutTTY)
 		if err != nil {
-			stopSender()
 			return err
 		}
 		a.emit = func(p sanitize.SanitizedPayload) {
@@ -252,34 +265,73 @@ func (a *agent) run(ctx context.Context) error {
 				a.log.Error("dry-run print failed", "err", err)
 			}
 		}
-		close(senderDone)
-	} else {
-		if err := a.startSender(senderCtx, senderDone); err != nil {
-			stopSender()
-			return err
-		}
+	} else if err := a.connect(); err != nil {
+		return err
 	}
-	defer func() {
-		stopSender()
-		<-senderDone
-	}()
+	defer a.disconnect(0)
 
 	if a.o.Once {
-		return a.once(ctx, stopSender, senderDone)
+		return a.once(ctx)
 	}
-	return a.loop(ctx, stopSender, senderDone)
+	return a.loop(ctx)
+}
+
+// newBatcher builds payloads for the current token (its hash is part of
+// the machine fingerprint).
+func (a *agent) newBatcher() {
+	a.batcher = batch.New(batch.Options{
+		Barrier:      a.barrier,
+		NextSeq:      a.st.NextSeq,
+		AgentVersion: a.o.Version,
+		MachineFP:    machineFP(a.o.Root, a.cfg.Token, a.host.Hostname),
+		Diag:         a.diag,
+	})
+}
+
+// connect starts the sender, unless the agent is standalone: then payloads
+// are still built (so "xnux payload --next" can show them) but nothing is
+// sent and no connection is ever opened (spec v1.1 delta 2).
+func (a *agent) connect() error {
+	if a.cfg.Standalone() {
+		a.emit = a.keepNext
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	if err := a.startSender(ctx, done); err != nil {
+		cancel()
+		return err
+	}
+	a.stopSender, a.senderDone = cancel, done
+	return nil
+}
+
+// disconnect stops the sender, giving queued payloads up to drain.
+func (a *agent) disconnect(drain time.Duration) {
+	if a.sender == nil {
+		return
+	}
+	a.stopSender()
+	<-a.senderDone
+	if drain > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), drain)
+		a.sender.Drain(ctx)
+		cancel()
+	}
+	a.sender, a.stopSender, a.senderDone = nil, nil, nil
 }
 
 func (a *agent) startSender(ctx context.Context, done chan struct{}) error {
 	var err error
-	a.spool, err = spool.Open(filepath.Join(a.o.StateDir, "spool"), spool.DefaultMax, spool.DefaultMaxEvents)
-	if err != nil {
+	if a.spool == nil {
+		if a.spool, err = spool.Open(filepath.Join(a.o.StateDir, "spool"), spool.DefaultMax, spool.DefaultMaxEvents); err != nil {
+			return err
+		}
+	}
+	if a.mirror, err = mirror.New(a.o.LogDir, a.cfg.MirrorHistory); err != nil {
 		return err
 	}
-	mir, err := mirror.New(a.o.LogDir, a.cfg.MirrorHistory)
-	if err != nil {
-		return err
-	}
+	mir := a.mirror
 	a.sender, err = sender.New(sender.Options{
 		Endpoint: a.cfg.Endpoint, Token: a.cfg.Token, CAFile: a.cfg.TLS.CAFile, Proxy: a.cfg.Proxy,
 		Version: a.o.Version, Barrier: a.barrier, Spool: a.spool, Log: a.log,
@@ -292,9 +344,13 @@ func (a *agent) startSender(ctx context.Context, done chan struct{}) error {
 	if err != nil {
 		return err
 	}
-	a.emit = a.sender.Enqueue
+	snd := a.sender
+	a.emit = func(p sanitize.SanitizedPayload) {
+		a.keepNext(p)
+		snd.Enqueue(p)
+	}
 	go func() {
-		a.sender.Run(ctx)
+		snd.Run(ctx)
 		close(done)
 	}()
 	return nil
@@ -302,8 +358,17 @@ func (a *agent) startSender(ctx context.Context, done chan struct{}) error {
 
 // loop is the daemon: one sampling ticker, periodic flush, heartbeat and
 // state saves; everything else is idle (spec A1: no busy loops).
-func (a *agent) loop(ctx context.Context, stopSender context.CancelFunc, senderDone chan struct{}) error {
-	a.log.Info("agent started", "version", a.o.Version, "dry_run", a.o.DryRun, "capabilities", a.host.Capabilities)
+func (a *agent) loop(ctx context.Context) error {
+	a.log.Info("agent started", "version", a.o.Version, "dry_run", a.o.DryRun, "standalone", a.cfg.Standalone(),
+		"capabilities", a.host.Capabilities)
+	a.started = time.Now()
+	if !a.o.DryRun {
+		closeLocal, err := a.openLocal(ctx)
+		if err != nil {
+			return err
+		}
+		defer closeLocal()
+	}
 	interval := time.Duration(a.cfg.IntervalSeconds) * time.Second
 	sampleT := time.NewTicker(interval)
 	flushT := time.NewTicker(time.Duration(a.cfg.FlushSeconds) * time.Second)
@@ -332,7 +397,9 @@ func (a *agent) loop(ctx context.Context, stopSender context.CancelFunc, senderD
 		select {
 		case <-ctx.Done():
 			stopWatchers()
-			return a.shutdown(stopSender, senderDone)
+			return a.shutdown()
+		case reply := <-a.reload:
+			reply <- a.applyReload()
 		case r := <-a.records:
 			a.events(a.engine.Record(r))
 		case ev := <-a.snapped:
@@ -359,7 +426,7 @@ func (a *agent) loop(ctx context.Context, stopSender context.CancelFunc, senderD
 	}
 }
 
-func (a *agent) once(ctx context.Context, stopSender context.CancelFunc, senderDone chan struct{}) error {
+func (a *agent) once(ctx context.Context) error {
 	a.sampler.Sample(time.Now())
 	t := time.NewTimer(time.Second) // CPU needs two readings
 	select {
@@ -374,28 +441,19 @@ func (a *agent) once(ctx context.Context, stopSender context.CancelFunc, senderD
 	if a.sender == nil {
 		return nil
 	}
-	stopSender()
-	<-senderDone
-	dctx, cancel := context.WithTimeout(ctx, onceDrain)
-	defer cancel()
-	a.sender.Drain(dctx)
+	snd := a.sender
+	a.disconnect(onceDrain)
 	a.save()
-	if n := a.sender.Queued(); n > 0 {
+	if n := snd.Queued(); n > 0 {
 		return fmt.Errorf("%d payload(s) not delivered, kept in the spool", n)
 	}
 	return nil
 }
 
-func (a *agent) shutdown(stopSender context.CancelFunc, senderDone chan struct{}) error {
+func (a *agent) shutdown() error {
 	a.log.Info("shutting down")
 	a.flush(false)
-	if a.sender != nil {
-		stopSender()
-		<-senderDone
-		ctx, cancel := context.WithTimeout(context.Background(), shutdownDrain)
-		a.sender.Drain(ctx)
-		cancel()
-	}
+	a.disconnect(shutdownDrain)
 	a.save()
 	return nil
 }
@@ -412,6 +470,7 @@ func (a *agent) sample(t time.Time) {
 	if a.ring != nil {
 		a.ring.Add(m)
 	}
+	a.recordMetric(m)
 	if a.engine != nil {
 		a.events(a.engine.Metric(m))
 	}
@@ -490,6 +549,7 @@ func (a *agent) events(evs []proto.Event) {
 // addEvent queues an event and flushes a second later, so events that
 // arrive together share a payload (spec A5.2). P0 goes out at once.
 func (a *agent) addEvent(ev proto.Event) {
+	a.recordEvent(ev)
 	a.batcher.AddEvent(ev)
 	if a.eventT == nil { // --once: the final flush carries it
 		return
@@ -680,6 +740,13 @@ func check(ctx context.Context, o Options, cfg *config.Config, s *collect.Sample
 	info("authlog", enabled(col.Authlog, auth))
 	info("procscan", enabled(col.Procscan, present(exists("proc/self"))))
 
+	if cfg.Standalone() {
+		info("endpoint", "standalone: no token, nothing is sent (xnux connect to link)")
+		if !ok {
+			return errors.New("check failed")
+		}
+		return nil
+	}
 	pctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	code, err := sender.Probe(pctx, sender.Options{Endpoint: cfg.Endpoint, CAFile: cfg.TLS.CAFile, Proxy: cfg.Proxy, Version: o.Version})

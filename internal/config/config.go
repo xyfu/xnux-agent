@@ -65,9 +65,17 @@ type TLS struct {
 	CAFile string `yaml:"ca_file"`
 }
 
+// DefaultEndpoint is the Xnux service.
+const DefaultEndpoint = "https://ingest.xnux.net"
+
+// Standalone is true without a token: the agent records locally and opens
+// no network connection at all (spec v1.1 delta 2).
+func (c *Config) Standalone() bool { return c.Token == "" }
+
 // Default returns the configuration used for keys absent from the file.
 func Default() *Config {
 	return &Config{
+		Endpoint:        DefaultEndpoint,
 		IntervalSeconds: 15,
 		FlushSeconds:    60,
 		Collectors:      Collectors{Metrics: true, Systemd: true, Kmsg: true, Authlog: true, Procscan: true},
@@ -81,6 +89,9 @@ func Default() *Config {
 // (such as loose file permissions) the caller should log.
 func Load(path string) (cfg *Config, warnings []string, err error) {
 	fi, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Default(), []string{path + " not found: running standalone with defaults"}, nil
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -112,9 +123,7 @@ func Parse(b []byte) (*Config, error) {
 // Validate checks ranges and formats.
 func (c *Config) Validate() error {
 	var errs []error
-	if c.Token == "" {
-		errs = append(errs, errors.New("token is required"))
-	} else if !strings.HasPrefix(c.Token, "xat_") {
+	if c.Token != "" && !strings.HasPrefix(c.Token, "xat_") {
 		errs = append(errs, errors.New(`token must start with "xat_"`))
 	}
 	if u, err := url.Parse(c.Endpoint); c.Endpoint == "" || err != nil || u.Host == "" {

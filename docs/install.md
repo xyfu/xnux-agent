@@ -4,7 +4,7 @@
 
 ## 一行安装
 
-在控制台「服务器 → 添加服务器」里复制安装命令，它已经带好 token 和上报地址：
+不带 `--token` 即为本地[黑匣子](standalone.md)（独立模式，不联网）；要上报到 Xnux，在控制台「服务器 → 添加服务器」里复制安装命令，它已经带好 token 和上报地址：
 
 ```sh
 curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.sh | sudo sh -s -- --token xat_…
@@ -16,7 +16,7 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 
 1. 按 `uname -m` 选择 amd64 / arm64，下载 `xnux-agent-linux-<arch>` 和 `SHA256SUMS`（curl 或 wget）。
 2. 用 `sha256sum`（或 `shasum` / `openssl`）校验，**不一致直接退出，什么都不装**。
-3. 安装到 `/usr/local/bin/xnux-agent`，写 `/etc/xnux/agent.yaml`（0600）。
+3. 安装到 `/usr/local/bin/xnux-agent`，建软链接 `/usr/local/bin/xnux`（命令行），创建 `xnux` 组，写 `/etc/xnux/agent.yaml`（0600）。
 4. 写入加固过的 systemd unit（`NoNewPrivileges`、`ProtectSystem=strict`、`MemoryMax=64M`、`CPUQuota=10%`），启用并启动，然后运行 `xnux-agent --check` 自检。
 
 装好后几秒内，控制台安装向导会显示收到的第一条上报原文。
@@ -25,7 +25,7 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 
 | 参数 | 作用 |
 | --- | --- |
-| `--token xat_…` | 控制台生成的探针 token。首次安装必填，升级时可省略 |
+| `--token xat_…` | 控制台生成的探针 token。不带则为独立模式（只在本机记录）；升级时可省略，保留原配置 |
 | `--endpoint URL` | 上报地址：服务端，或你的 [Cloudflare Worker](relay.md)。默认 `https://ingest.xnux.net` |
 | `--version vX.Y.Z` | 安装指定版本（默认最新） |
 | `--base-url URL` | 从这里下载二进制（Release 文件的镜像），而不是 GitHub Releases |
@@ -34,6 +34,8 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 | `--ca-file PATH` | 上报地址使用私有 CA 时，信任该 CA |
 | `--least-privilege` | 以专用用户 `xnux` + 最小能力集运行，见 [least-privilege.md](least-privilege.md) |
 | `--no-start` | 安装但不启动 |
+| `--add-user USER` | 把 USER 加入 `xnux` 组，免 sudo 使用 `xnux` 命令 |
+| `--no-prompt` | 不询问（默认会问是否把当前 sudo 用户加入 `xnux` 组） |
 
 ### 先看看会发什么
 
@@ -51,7 +53,7 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 
 ```sh
 curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/uninstall.sh | sudo sh               # 保留配置与数据
-curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/uninstall.sh | sudo sh -s -- --purge # 全部删除
+curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/uninstall.sh | sudo sh -s -- --purge # 全部删除（含本地事件与指标、xnux 用户和组）
 ```
 
 卸载后在控制台删除这台服务器，服务端会吊销 token 并硬删除它的全部数据。

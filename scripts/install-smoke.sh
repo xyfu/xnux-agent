@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Runs deploy/install.sh against the binaries in bin/ (make dist) inside a
 # distro container, with no server: dry-run as an unprivileged user installs
-# nothing and prints the payload, and a binary that does not match
-# SHA256SUMS is refused. The full install against the service runs in the
+# nothing and prints the payload, a binary that does not match
+# SHA256SUMS is refused, and a standalone install (no token, no systemd)
+# answers the xnux CLI and uninstalls cleanly. The full install against the service runs in the
 # service's own CI.
 #
 #   make dist && IMAGE=ubuntu:24.04 scripts/install-smoke.sh
@@ -38,7 +39,8 @@ if ! x 'command -v curl || command -v wget' >/dev/null; then
 	x '(apt-get update -qq && apt-get install -y -qq curl) >/dev/null 2>&1 || dnf install -y -q curl >/dev/null 2>&1 || apk add -q curl'
 fi
 docker cp "$root/bin/install.sh" "$name:/tmp/i.sh"
-x 'chmod 755 /tmp/i.sh'
+docker cp "$root/bin/uninstall.sh" "$name:/tmp/u.sh"
+x 'chmod 755 /tmp/i.sh /tmp/u.sh'
 
 fails=0
 out=$(x "su -s /bin/sh nobody -c 'sh /tmp/i.sh --dry-run --base-url http://127.0.0.1:$port' 2>&1" || true)
@@ -55,6 +57,32 @@ if printf '%s' "$out" | grep -q 'sha256 mismatch' && ! x 'test -e /usr/local/bin
 	echo "PASS a binary that does not match SHA256SUMS is refused"
 else
 	echo "FAIL tampered binary: $(printf '%s' "$out" | tail -3)"
+	fails=$((fails + 1))
+fi
+# Standalone: no token, no systemd in the container, the agent run by hand.
+out=$(x "sh /tmp/i.sh --no-prompt --base-url http://127.0.0.1:$port 2>&1" || true)
+x 'nohup /usr/local/bin/xnux-agent run >/dev/null 2>&1 &'
+status=''
+for _ in $(seq 1 20); do
+	status=$(x 'xnux status --json 2>/dev/null' || true)
+	case "$status" in *standalone*) break ;; esac
+	sleep 1
+done
+if x 'test -L /usr/local/bin/xnux && test -f /etc/xnux/agent.yaml' && ! x 'grep -q "^token:" /etc/xnux/agent.yaml' &&
+	printf '%s' "$status" | grep -q '"mode": *"standalone"'; then
+	echo "PASS standalone install answers xnux status"
+else
+	echo "FAIL standalone: $(printf '%s' "$out" | tail -3) / $status"
+	fails=$((fails + 1))
+fi
+# shellcheck disable=SC2016 # expanded inside the container
+x 'pid=$(grep -lx xnux-agent /proc/[0-9]*/comm 2>/dev/null | head -1 | cut -d/ -f3); [ -z "$pid" ] || kill "$pid"'
+x 'sh /tmp/u.sh --purge >/dev/null 2>&1' || true
+if ! x 'test -e /usr/local/bin/xnux-agent -o -e /usr/local/bin/xnux -o -e /etc/xnux -o -e /var/lib/xnux' &&
+	! x 'getent group xnux >/dev/null'; then
+	echo "PASS uninstall --purge removed binary, CLI, config, state and group"
+else
+	echo "FAIL uninstall left files behind"
 	fails=$((fails + 1))
 fi
 exit "$fails"

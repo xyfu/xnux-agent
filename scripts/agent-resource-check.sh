@@ -4,6 +4,9 @@
 #
 #   DURATION=120 scripts/agent-resource-check.sh
 #
+# MODE=standalone runs without a token (local store and CLI socket only,
+# no network) and also asks the CLI for status once a minute.
+#
 # Thresholds: RSS < 15 MB at every sample; average CPU < MAX_CPU_PCT
 # (default 0.05%, which top rounds to 0.00% or 0.01% on one core).
 set -euo pipefail
@@ -13,9 +16,11 @@ WARMUP=${WARMUP:-15}
 MAX_RSS_KB=${MAX_RSS_KB:-15360}
 MAX_CPU_PCT=${MAX_CPU_PCT:-0.05}
 PORT=${PORT:-18091}
+MODE=${MODE:-connected}
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
+# shellcheck disable=SC2329 # invoked by the trap
 cleanup() { kill "${agent_pid:-}" "${srv_pid:-}" 2>/dev/null || true; rm -rf "$work"; }
 trap cleanup EXIT
 
@@ -32,15 +37,19 @@ http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
 PY
 srv_pid=$!
 
-cat > "$work/agent.yaml" <<YAML
+if [ "$MODE" = standalone ]; then
+  printf 'interval_seconds: 15\n' > "$work/agent.yaml"
+else
+  cat > "$work/agent.yaml" <<YAML
 token: "xat_resourcecheck00000000000000"
 endpoint: "http://127.0.0.1:$PORT"
 interval_seconds: 15
 flush_seconds: 60
 YAML
+fi
 chmod 600 "$work/agent.yaml"
 
-"$work/xnux-agent" --config "$work/agent.yaml" --state-dir "$work/lib" --log-dir "$work/log" &
+"$work/xnux-agent" --config "$work/agent.yaml" --state-dir "$work/lib" --log-dir "$work/log" --socket "$work/agent.sock" &
 agent_pid=$!
 sleep "$WARMUP"
 
@@ -59,6 +68,9 @@ t0=$(date +%s.%N); c0=$(cpu_ns); max_rss=0
 end=$(( $(date +%s) + DURATION ))
 while [ "$(date +%s)" -lt "$end" ]; do
   r=$(rss); [ "$r" -gt "$max_rss" ] && max_rss=$r
+  if [ "$MODE" = standalone ] && [ $(( $(date +%s) % 60 )) -lt 5 ]; then
+    XNUX_SOCKET="$work/agent.sock" "$work/xnux-agent" cli status --json >/dev/null || { echo "FAIL: xnux status"; exit 1; }
+  fi
   sleep 5
 done
 t1=$(date +%s.%N); c1=$(cpu_ns)

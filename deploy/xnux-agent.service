@@ -18,6 +18,9 @@ ProtectHome=read-only
 ReadWritePaths=/var/lib/xnux /var/log/xnux
 StateDirectory=xnux
 LogsDirectory=xnux
+# The xnux CLI's socket, /run/xnux/agent.sock (0660, group xnux).
+RuntimeDirectory=xnux
+RuntimeDirectoryMode=0755
 MemoryMax=64M
 CPUQuota=10%
 
