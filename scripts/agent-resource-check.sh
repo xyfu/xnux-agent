@@ -20,11 +20,15 @@ MODE=${MODE:-connected}
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
-# shellcheck disable=SC2329 # invoked by the trap
-cleanup() { kill "${agent_pid:-}" "${srv_pid:-}" 2>/dev/null || true; rm -rf "$work"; }
+# shellcheck disable=SC2317,SC2329 # invoked by the trap
+cleanup() {
+  kill "${agent_pid:-}" "${srv_pid:-}" 2>/dev/null || true
+  wait 2>/dev/null || true
+  rm -rf "$work"
+}
 trap cleanup EXIT
 
-(cd "$root" && CGO_ENABLED=0 go build -trimpath -o "$work/xnux-agent" ./cmd/xnux-agent)
+(cd "$root" && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$work/xnux-agent" ./cmd/xnux-agent)
 
 python3 - "$PORT" <<'PY' &
 import http.server, sys
@@ -79,6 +83,11 @@ cpu=$(awk -v c0="$c0" -v c1="$c1" -v t0="$t0" -v t1="$t1" 'BEGIN { printf "%.4f"
 cpu_ms=$(awk -v c0="$c0" -v c1="$c1" 'BEGIN { printf "%.1f", (c1-c0)/1e6 }')
 hwm=$(awk '/^VmHWM:/ {print $2}' "/proc/$agent_pid/status")
 echo "duration=${DURATION}s  max VmRSS=${max_rss} kB  VmHWM=${hwm} kB  CPU time=${cpu_ms} ms  avg CPU=${cpu}%"
+# What the resident set is made of: the binary's pages (file) vs heap and
+# stacks (anon), and how the kernel backs them.
+grep -E '^(RssAnon|RssFile|Threads)' "/proc/$agent_pid/status" | tr -s ' \t' ' ' | paste -sd' '
+grep -E '^(AnonHugePages|FilePmdMapped|Private_Clean|Private_Dirty|Shared_Clean)' "/proc/$agent_pid/smaps_rollup" 2>/dev/null | tr -s ' \t' ' ' | paste -sd' '
+echo "kernel $(uname -r), THP $(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null), binary $(stat -c %s "$work/xnux-agent") bytes"
 
 fail=0
 [ "$max_rss" -lt "$MAX_RSS_KB" ] || { echo "FAIL: RSS ${max_rss} kB >= ${MAX_RSS_KB} kB"; fail=1; }

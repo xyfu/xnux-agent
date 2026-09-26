@@ -14,7 +14,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 name="xnux-smoke-$$"
 evil=$(mktemp -d)
 good_pid='' evil_pid=''
-# shellcheck disable=SC2329 # invoked by the trap
+# shellcheck disable=SC2317,SC2329 # invoked by the trap
 cleanup() {
 	docker rm -f "$name" >/dev/null 2>&1 || true
 	[ -z "$good_pid" ] || kill "$good_pid" "$evil_pid" 2>/dev/null || true

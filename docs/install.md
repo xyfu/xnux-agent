@@ -70,7 +70,7 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/uninstall
 
 ## 已验证的发行版
 
-本仓库 CI 的 `install` 任务在 Ubuntu 20.04 / 22.04 / 24.04、Debian 11 / 12、Rocky Linux 9、Alpine 3.20 上跑 [scripts/install-smoke.sh](../scripts/install-smoke.sh)：普通用户 dry-run 不安装不外发，篡改的二进制被拒。完整安装流程（安装、首条上报、升级保留配置、最小权限、`uninstall --purge`）在 Xnux 服务的 CI 中对每个发行版的 systemd 容器验证。
+本仓库 CI 的 `install` 任务在 Ubuntu 20.04 / 22.04 / 24.04、Debian 12 / 13、Rocky Linux 9、Alpine 3.20 上跑 [scripts/install-smoke.sh](../scripts/install-smoke.sh)：普通用户 dry-run 不安装不外发，篡改的二进制被拒。完整安装流程（安装、首条上报、升级保留配置、最小权限、`uninstall --purge`）在 Xnux 服务的 CI 中对每个发行版的 systemd 容器验证。
 
 本地运行：
 
