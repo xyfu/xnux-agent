@@ -47,8 +47,15 @@ func init() {
 	if godebug != "" {
 		godebug += ","
 	}
+	// The binary's own path, not /proc/self/exe: the process name (comm)
+	// comes from it and must stay "xnux-agent". A binary replaced by an
+	// upgrade reads as "… (deleted)" and fails to exec; it then runs as is.
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
 	env := append(os.Environ(), "GODEBUG="+godebug+"disablethp=1")
-	_ = syscall.Exec("/proc/self/exe", os.Args, env) //nolint:gosec // this same binary; on failure it runs as is
+	_ = syscall.Exec(exe, os.Args, env) //nolint:gosec // this same binary
 }
 
 func main() {
