@@ -1,0 +1,15 @@
+# Deploy with: npx wrangler deploy -c bark/wrangler.toml   (from relay/)
+# Then set a path secret: npx wrangler secret put PATH_SECRET -c bark/wrangler.toml
+# Optional, to keep device keys here: npx wrangler secret put DEVICES -c bark/wrangler.toml
+#   value: {"jack": "<key>", "ops": "<key>"}; channels then use ?who=jack / ?who=all
+name = "xnux-bark-relay"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[observability]
+enabled = false
+
+[vars]
+# A self-hosted bark-server, or leave the public one.
+UPSTREAM = "https://api.day.app"

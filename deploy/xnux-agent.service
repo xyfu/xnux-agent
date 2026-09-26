@@ -1,0 +1,33 @@
+[Unit]
+Description=Xnux agent
+Documentation=https://github.com/xyfu/xnux-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/xnux-agent run --config /etc/xnux/agent.yaml
+Restart=always
+RestartSec=5
+Environment=GOMAXPROCS=2 GOGC=50
+
+# Hardening (spec A1).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/xnux /var/log/xnux
+StateDirectory=xnux
+LogsDirectory=xnux
+MemoryMax=64M
+CPUQuota=10%
+
+# Least-privilege mode: uncomment to run as the dedicated "xnux" user
+# (create it and add it to the systemd-journal group first).
+#User=xnux
+#Group=xnux
+#SupplementaryGroups=systemd-journal
+#AmbientCapabilities=CAP_SYSLOG CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+#CapabilityBoundingSet=CAP_SYSLOG CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,2 @@
+processor	: 0
+flags		: fpu vme hypervisor lahf_lm

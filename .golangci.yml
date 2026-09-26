@@ -1,0 +1,63 @@
+version: "2"
+
+linters:
+  enable:
+    - depguard
+    - errorlint
+    - gosec
+    - misspell
+    - revive
+    - unconvert
+  settings:
+    depguard:
+      rules:
+        # Spec A6.1: in the agent only the sender package may talk HTTP, so no
+        # other code path can send bytes that skipped the redaction barrier.
+        agent-network:
+          files:
+            - "**/internal/**"
+            - "**/cmd/**"
+            - "!**/internal/sender/**"
+            - "!**/*_test.go"
+          deny:
+            - pkg: net/http
+              desc: only internal/sender may import net/http (spec A6.1)
+        # The agent must stay a lean static binary: no server-side deps.
+        agent-deps:
+          files:
+            - "$all"
+          deny:
+            - pkg: github.com/xyfu/xnux-saas
+              desc: agent must not depend on the SaaS
+            - pkg: github.com/gofiber
+              desc: agent must not depend on the web framework
+            - pkg: github.com/jackc
+              desc: agent must not depend on the database driver
+            - pkg: github.com/redis
+              desc: agent must not depend on redis
+    gosec:
+      excludes:
+        - G104 # unchecked errors: errcheck covers the ones that matter
+        - G304 # file paths come from config and fixed layout, by design
+        - G115 # integer conversions of kernel counters and sizes
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+  exclusions:
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters: [gosec]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/xyfu/xnux-agent

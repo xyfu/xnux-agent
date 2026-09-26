@@ -1,0 +1,121 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test -race ./...
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+      - name: build (amd64, arm64)
+        run: make agent
+      - name: statically linked
+        run: |
+          for f in bin/xnux-agent-linux-*; do
+            file "$f"
+            file "$f" | grep -q "statically linked" || { echo "$f is not static"; exit 1; }
+          done
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: fuzz the security log parser
+        run: go test ./internal/watch/authlog -run '^$' -fuzz FuzzParse -fuzztime 30s
+      - name: fuzz the kernel log parser
+        run: go test ./internal/watch/kmsg -run '^$' -fuzz FuzzMatch -fuzztime 30s
+
+  resources:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: RSS and idle CPU envelope (F1-9)
+        run: DURATION=180 scripts/agent-resource-check.sh
+
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node --check relay/src/worker.js && node --check relay/bark/worker.js
+      - name: relay tests (whitelist, header stripping, streaming, no state)
+        run: node --test relay/test/*.test.mjs
+
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: shellcheck
+        run: shellcheck deploy/install.sh deploy/uninstall.sh scripts/*.sh
+      - name: install.sh writes the same unit as deploy/xnux-agent.service
+        run: |
+          diff <(sed -n '/^\[Unit\]/,/^CPUQuota/p' deploy/install.sh) \
+               <(sed -n '/^\[Unit\]/,/^CPUQuota/p' deploy/xnux-agent.service)
+
+  vulnerabilities:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  # The same source built two ways, on the host and in the Go image, must
+  # give the same bytes (spec A8.4).
+  reproducible:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: build twice, two ways
+        run: |
+          make agent VERSION=ci COMMIT=0000000
+          (cd bin && sha256sum xnux-agent-linux-*) > host.sums
+          rm -rf bin
+          docker run --rm -v "$PWD:/src" -w /src -e GOFLAGS=-buildvcs=false \
+            golang:$(sed -n 's/^toolchain go//p' go.mod) make agent VERSION=ci COMMIT=0000000
+          (cd bin && sha256sum xnux-agent-linux-*) > image.sums
+          cat host.sums image.sums
+          diff host.sums image.sums
+
+  # Dry-run and checksum refusal on every supported distro; the full
+  # install against the service runs in the service's CI.
+  install:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:20.04", "ubuntu:22.04", "ubuntu:24.04", "debian:11", "debian:12", "rockylinux/rockylinux:9", "alpine:3.20"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: make dist VERSION=ci COMMIT=0000000
+      - run: IMAGE=${{ matrix.image }} scripts/install-smoke.sh

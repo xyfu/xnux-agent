@@ -1,0 +1,10 @@
+22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw
+23 22 0:21 / /proc rw,nosuid shared:2 - proc proc rw
+24 22 0:5 / /dev rw shared:3 - devtmpfs udev rw
+25 22 0:22 / /run rw shared:4 - tmpfs tmpfs rw
+26 22 8:2 / /data rw,relatime shared:5 - xfs /dev/sda2 rw
+27 22 8:2 /sub /srv/bind\040dir rw,relatime shared:5 - xfs /dev/sda2 rw
+28 22 0:40 /@home /home rw,relatime shared:6 - btrfs /dev/sdb1 rw,subvol=/@home
+29 22 0:41 /@var /var/lib/data rw,relatime shared:7 - btrfs /dev/sdb1 rw,subvol=/@var
+30 22 0:50 / /var/lib/docker/overlay2/x/merged rw - overlay overlay rw
+31 22 7:0 / /snap/core/1 ro - squashfs /dev/loop0 ro

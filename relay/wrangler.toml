@@ -1,0 +1,14 @@
+# Deploy with: npx wrangler deploy
+# Prefer a *.workers.dev subdomain unrelated to your business domain: Cloudflare
+# adds a CF-Worker header naming the zone to subrequests, which cannot be removed.
+name = "xnux-relay"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[observability]
+enabled = false
+
+[vars]
+# The Xnux ingest address.
+UPSTREAM = "https://ingest.xnux.net"

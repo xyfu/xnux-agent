@@ -1,0 +1,29 @@
+# /etc/xnux/agent.yaml (mode 0600)
+token: "xat_replace_me"               # required, agent token
+endpoint: "https://ingest.xnux.net"  # or your Cloudflare Worker (see docs/relay.md)
+interval_seconds: 15                 # metric sampling interval, 10–60
+flush_seconds: 60                    # metric batch upload interval, 30–300
+hide_hostname: false                 # true replaces the hostname with "host"
+mirror_history: 0                    # keep the last N sent payloads in /var/log/xnux/outgoing/
+collectors:
+  metrics: true
+  systemd: true
+  kmsg: true
+  authlog: true
+  procscan: true
+systemd:
+  ignore_units: ["apt-daily.service", "man-db.service"]
+security:
+  bruteforce_fail_threshold: 20      # within 5 minutes
+  spray_user_threshold: 5
+  breach_fail_threshold: 10          # failures within 30 minutes before a successful login
+  sudo_sensitive_extra: []           # extra sensitive-command regexes
+procscan:
+  whitelist_exe: []
+  whitelist_comm: []
+sanitize:
+  mask_email: true
+  extra_patterns: []                 # custom redaction regexes; built-in rules cannot be disabled
+tls:
+  ca_file: ""                        # trust this CA for the endpoint (a private CA)
+proxy: ""                            # optional HTTP(S) proxy
