@@ -29,6 +29,28 @@ var (
 	commit  = "unknown"
 )
 
+// With transparent huge pages set to "always", 2 MB pages back a heap of a
+// few MB and the daemon's resident set grows by several MB. The runtime's
+// GODEBUG=disablethp=1 avoids that but is read only at startup, so the
+// daemon re-executes itself once with it set.
+func init() {
+	if len(os.Args) > 1 && os.Args[1] == "cli" || filepath.Base(os.Args[0]) == "xnux" {
+		return
+	}
+	godebug := os.Getenv("GODEBUG")
+	if strings.Contains(godebug, "disablethp") {
+		return
+	}
+	if b, err := os.ReadFile("/sys/kernel/mm/transparent_hugepage/enabled"); err != nil || !strings.Contains(string(b), "[always]") {
+		return
+	}
+	if godebug != "" {
+		godebug += ","
+	}
+	env := append(os.Environ(), "GODEBUG="+godebug+"disablethp=1")
+	_ = syscall.Exec("/proc/self/exe", os.Args, env) //nolint:gosec // this same binary; on failure it runs as is
+}
+
 func main() {
 	// Resource envelope (spec A1): small heap, two OS threads.
 	if os.Getenv("GOMAXPROCS") == "" {
