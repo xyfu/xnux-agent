@@ -1,43 +1,45 @@
-# 最小权限部署
+# Least-privilege deployment
 
-默认情况下探针以 root 运行（仍受 systemd 沙箱约束：`NoNewPrivileges`、`ProtectSystem=strict`、`ProtectHome=read-only`、只可写 `/var/lib/xnux` 和 `/var/log/xnux`、内存上限 64 MB、CPU 上限 10%）。如果你不希望任何第三方程序以 root 身份运行，可以用专用用户加最小能力集。
+English | [简体中文](least-privilege.zh-CN.md)
 
-## 一步完成
+By default the agent runs as root (still confined by the systemd sandbox: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=read-only`, write access only to `/var/lib/xnux` and `/var/log/xnux`, a 64 MB memory limit, a 10% CPU limit). If you don't want any third-party program running as root, you can use a dedicated user with a minimal capability set.
+
+## In one step
 
 ```sh
 curl -fsSL …/install.sh | sudo sh -s -- --token xat_… --least-privilege
 ```
 
-脚本会：
+The script will:
 
-1. 创建系统用户 `xnux`（无 home、无登录 shell）。
-2. 把 `/etc/xnux/agent.yaml` 交给 `xnux`（仍为 0600）。
-3. 在 unit 中加入：
+1. Create the system user `xnux` (no home, no login shell).
+2. Hand `/etc/xnux/agent.yaml` over to `xnux` (still 0600).
+3. Add to the unit:
 
 ```ini
 User=xnux
 Group=xnux
-SupplementaryGroups=systemd-journal adm     # 只加入系统上存在的组
+SupplementaryGroups=systemd-journal adm     # only groups that exist on the system are added
 AmbientCapabilities=CAP_SYSLOG CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
 CapabilityBoundingSet=CAP_SYSLOG CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
 ```
 
-`StateDirectory` / `LogsDirectory` 会由 systemd 自动改为 `xnux` 所有。已安装的机器重跑一次带 `--least-privilege` 的命令即可切换，配置保留。
+systemd automatically hands `StateDirectory` / `LogsDirectory` over to `xnux`. On a machine that already has the agent installed, rerun the command with `--least-privilege` to switch; the config is kept.
 
-## 每项权限的用途
+## What each permission is for
 
-| 权限 | 用来做什么 | 去掉后 |
+| Permission | Used for | Without it |
 | --- | --- | --- |
-| `CAP_SYSLOG` | 读 `/dev/kmsg` | 没有 OOM、段错误、磁盘错误、只读文件系统、hung task 事件 |
-| `CAP_DAC_READ_SEARCH` | 读 `/var/log/auth.log`、`/var/log/secure`；读其他用户进程的 `/proc/<pid>/fd` | 没有 SSH 爆破 / 登录突破 / sudo 事件（除非改用 journal）；可疑进程巡检看不到其他用户的进程 |
-| `CAP_SYS_PTRACE` | `readlink` 其他用户进程的 `/proc/<pid>/exe` | 无法识别无文件进程、已删除的可执行文件、`/tmp` 下执行的程序 |
-| `systemd-journal` 组 | 通过 journal 读取服务日志尾部和认证日志 | 服务崩溃事件没有日志尾部 |
+| `CAP_SYSLOG` | Reading `/dev/kmsg` | No OOM, segfault, disk error, read-only filesystem or hung task events |
+| `CAP_DAC_READ_SEARCH` | Reading `/var/log/auth.log` and `/var/log/secure`; reading `/proc/<pid>/fd` of other users' processes | No SSH brute force / login breach / sudo events (unless the journal is used instead); the suspicious-process scan cannot see other users' processes |
+| `CAP_SYS_PTRACE` | `readlink` on `/proc/<pid>/exe` of other users' processes | Cannot detect fileless processes, deleted executables or programs run from `/tmp` |
+| `systemd-journal` group | Reading service log tails and auth logs through the journal | Service crash events have no log tail |
 
-探针启动时会检查每个采集器是否真的可用，不可用的自动关闭并从上报的 `capabilities` 中去掉；控制台服务器详情页会提示缺了哪些监控。资源指标（CPU、内存、磁盘、负载、温度）不需要任何特权。
+At startup the agent checks whether each collector actually works; unavailable ones are disabled automatically and removed from the reported `capabilities`, and the server detail page in the console shows which monitoring is missing. Resource metrics (CPU, memory, disk, load, temperature) need no privileges.
 
-## 更进一步
+## Going further
 
-- 只要资源监控：在 `agent.yaml` 里关掉 `collectors.kmsg`、`authlog`、`procscan`，unit 里去掉全部能力。
-- 不想让主机名出现在任何地方：`hide_hostname: true`。
-- 不想让服务端知道源站 IP：用 [Cloudflare Worker 代理](relay.md)。
-- 想确认它到底发了什么：[透明度](../README.md#透明度)。
+- Resource monitoring only: turn off `collectors.kmsg`, `authlog` and `procscan` in `agent.yaml`, and remove all capabilities from the unit.
+- Keep the hostname from appearing anywhere: `hide_hostname: true`.
+- Keep the server from learning your origin IP: use the [Cloudflare Worker proxy](relay.md).
+- Check exactly what it sends: [Transparency](../README.md#verify-it-yourself).

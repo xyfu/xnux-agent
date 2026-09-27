@@ -1,71 +1,73 @@
-# 黑匣子：不连 Xnux 也能用
+# Black box: useful without connecting to Xnux
 
-探针不带 token 安装时是**独立模式**：它在本机持续记录指标和崩溃、OOM、入侵现场，出事后用 `xnux` 命令查看。不建立任何网络连接，不需要注册，免费。
+English | [简体中文](standalone.zh-CN.md)
+
+Installed without a token, the agent runs in **standalone mode**: it continuously records metrics and the incident context of crashes, OOMs and intrusions on the machine, and after something goes wrong you inspect it with the `xnux` command. It makes no network connections, requires no sign-up, and is free.
 
 ![xnux top](img/xnux-top.png)
 
-## 安装
+## Installation
 
 ```sh
 curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.sh | sudo sh
 ```
 
-和上报模式是同一个二进制、同一个安装脚本，只是不带 `--token`。脚本会：
+Same binary and same install script as connected mode, just without `--token`. The script:
 
-- 安装 `/usr/local/bin/xnux-agent`，并建软链接 `/usr/local/bin/xnux`（按调用名区分守护进程和命令行）；
-- 创建 `xnux` 组，并询问是否把当前 sudo 用户加入（加入后不用 sudo 就能用 `xnux`，下次登录生效）。非交互安装用 `--add-user alice` 或 `--no-prompt`。
+- installs `/usr/local/bin/xnux-agent` and creates the symlink `/usr/local/bin/xnux` (the invoked name decides between daemon and command line);
+- creates the `xnux` group and asks whether to add the current sudo user to it (once added, you can use `xnux` without sudo, effective from your next login). For non-interactive installs use `--add-user alice` or `--no-prompt`.
 
-## 命令
+## Commands
 
-| 命令 | 作用 |
+| Command | Purpose |
 | --- | --- |
-| `xnux top` | 终端实时面板：CPU、负载、内存、Swap、磁盘（含写满倒计时）、温度、Top 5 进程、最近 5 条事件、健康度；每 2 秒刷新，`--once` 只打印一帧 |
-| `xnux events [--type T,…] [--since 24h] [--severity P0,…]` | 本机记录的事件（保留 30 天） |
-| `xnux event ID` | 一个事件的完整现场：退出码、信号、日志尾部、进程快照、事发前 10 分钟曲线 |
-| `xnux history [--metric cpu,mem,load,disk] [--hours 24]` | 最近 24 小时指标的终端折线图 |
-| `xnux status` | 采集器、模式（独立 / 上报）、存储占用、健康度扣分明细 |
-| `xnux payload [--last\|--next]` | 最近一次上报 / 下一次将要上报的内容 |
-| `xnux connect --token xat_… [--endpoint URL]` | 切到上报模式（需 root） |
-| `xnux disconnect` | 切回独立模式，删除 token（需 root） |
+| `xnux top` | Live terminal dashboard: CPU, load, memory, swap, disks (with time until full), temperatures, top 5 processes, last 5 events, health score; refreshes every 2 seconds, `--once` prints a single frame |
+| `xnux events [--type T,…] [--since 24h] [--severity P0,…]` | Events recorded on this machine (kept for 30 days) |
+| `xnux event ID` | Full incident context for one event: exit code, signal, log tail, process snapshot, charts of the 10 minutes before the event |
+| `xnux history [--metric cpu,mem,load,disk] [--hours 24]` | Terminal line charts of the last 24 hours of metrics |
+| `xnux status` | Collectors, mode (standalone / connected), storage usage, breakdown of health score deductions |
+| `xnux payload [--last\|--next]` | What was last reported / what will be reported next |
+| `xnux connect --token xat_… [--endpoint URL]` | Switch to connected mode (requires root) |
+| `xnux disconnect` | Switch back to standalone mode and delete the token (requires root) |
 
-所有命令都支持 `--json`。终端宽度小于 80 列时 `xnux top` 自动精简布局；`LANG` 含 `zh` 时健康度说明为中文。
+All commands support `--json`. When the terminal is narrower than 80 columns, `xnux top` automatically uses a compact layout; when `LANG` contains `zh`, health score explanations are in Chinese.
 
-![xnux history 与 xnux events](img/xnux-history.png)
+![xnux history and xnux events](img/xnux-history.png)
 
-## 本地存储
+## Local storage
 
-| 路径 | 内容 |
+| Path | Contents |
 | --- | --- |
-| `/var/lib/xnux/events/YYYYMMDD.jsonl` | 事件，追加写，每条写完 fsync；单文件超过 10 MB 轮转（`YYYYMMDD.1.jsonl`…），保留 30 天 |
-| `/var/lib/xnux/metrics.ring` | 1440 槽 × 72 字节的环形文件，每分钟一条：平均值；磁盘与温度取该分钟最坏值 |
-| `/run/xnux/agent.sock` | 命令行与守护进程的 Unix Socket，0660，属组 `xnux`；行分隔 JSON |
+| `/var/lib/xnux/events/YYYYMMDD.jsonl` | Events, append-only, fsync after each record; a file over 10 MB is rotated (`YYYYMMDD.1.jsonl`…), kept for 30 days |
+| `/var/lib/xnux/metrics.ring` | Ring file of 1440 slots × 72 bytes, one record per minute: averages; disks and temperatures take the worst value of that minute |
+| `/run/xnux/agent.sock` | Unix socket between the command line and the daemon, 0660, group `xnux`; newline-delimited JSON |
 
-本地存的是**原始**数据（从不离开机器），文件都是 0600。只有切到上报模式后，数据才经过脱敏屏障再发出，见 [redaction.md](redaction.md)。总量上限 350 MB（事件超过 340 MB 时删最旧的文件）。
+What is stored locally is **raw** data (it never leaves the machine), and all files are 0600. Only after switching to connected mode does data pass through the redaction barrier before being sent; see [redaction.md](redaction.md). The total cap is 350 MB (when events exceed 340 MB the oldest files are deleted).
 
-断电安全：事件每条 fsync，写到一半的末行会在下次写入前补换行、读取时跳过；指标每条记录带 CRC，写坏的那一分钟读取时跳过。最多丢最后一条。
+Power-loss safety: each event is fsynced; a half-written last line gets a newline appended before the next write and is skipped on read; each metrics record carries a CRC, and a corrupted minute is skipped on read. At most the last record is lost.
 
-## 与 Xnux 的关系
+## Relationship to Xnux
 
-| 本地（免费、开源） | Xnux SaaS |
+| Local (free, open source) | Xnux SaaS |
 | --- | --- |
-| 单台服务器 | 多台集中查看 |
-| 指标 24 小时（1 分钟精度），事件 30 天 | 长期历史与图表 |
-| 手动查看，**不发任何告警** | 告警推送（免费档含 2 台） |
-| 原始现场数据 | AI 归因、App 修复、拨测、状态页、团队 |
+| Single server | Many servers in one place |
+| Metrics for 24 hours (1-minute resolution), events for 30 days | Long-term history and charts |
+| Inspect manually, **no alerts of any kind** | Alert notifications (free tier includes 2 servers) |
+| Raw incident context data | AI root-cause analysis, app fixes, uptime checks, status pages, teams |
 
-想要告警时：
+When you want alerts:
 
 ```sh
-sudo xnux connect --token xat_…     # 控制台「添加服务器」里的 token
+sudo xnux connect --token xat_…     # the token from "Add server" in the console
 ```
 
-`connect` 写入配置后通过 Socket 通知守护进程**不重启**地重载：上报通道当场建立，首批数据在几秒内送达，本地记录不中断。`xnux disconnect` 反过来：删除 token，停止上报，继续本地记录。
+`connect` writes the configuration and then notifies the daemon over the socket to reload **without restarting**: the reporting channel is set up on the spot, the first batch of data arrives within seconds, and local recording is not interrupted. `xnux disconnect` does the reverse: it deletes the token, stops reporting, and keeps recording locally.
 
-## 验证它确实不联网
+## Verify that it really stays offline
 
 ```sh
 xnux status                  # mode: standalone
-sudo ss -tnp | grep xnux     # 没有任何连接
+sudo ss -tnp | grep xnux     # no connections at all
 ```
 
-独立模式下上报模块根本不初始化；守护进程只监听那个 Unix Socket，不监听任何网络端口。
+In standalone mode the reporting module is never initialized; the daemon listens only on that Unix socket and on no network port.

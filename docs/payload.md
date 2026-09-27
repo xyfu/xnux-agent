@@ -1,10 +1,12 @@
-# 上报字段说明
+# Payload fields
 
-探针只有一个出站请求：`POST {endpoint}/v1/ingest`。服务端的响应里只有确认序号、服务端时间和可选提示（`agent_outdated`、`clock_skew`），没有任何探针会执行的指令或配置——探针不接收远程命令。
+English | [简体中文](payload.zh-CN.md)
 
-机器可读的定义：[proto/ingest.v1.schema.json](https://github.com/xyfu/xnux-shared/blob/main/proto/ingest.v1.schema.json)（JSON Schema，在 [xnux-shared](https://github.com/xyfu/xnux-shared) 仓库）。想看自己机器上的真实内容：`xnux-agent --dry-run --once`，或 `/var/log/xnux/last_outgoing_payload.json`。
+The agent makes exactly one kind of outbound request: `POST {endpoint}/v1/ingest`. The server's response contains only an acknowledged sequence number, the server time and optional hints (`agent_outdated`, `clock_skew`). It never carries instructions or configuration for the agent to execute: the agent does not accept remote commands.
 
-## 请求
+Machine-readable definition: [proto/ingest.v1.schema.json](https://github.com/xyfu/xnux-shared/blob/main/proto/ingest.v1.schema.json) (JSON Schema, in the [xnux-shared](https://github.com/xyfu/xnux-shared) repository). To see what your own machine actually sends: `xnux-agent --dry-run --once`, or `/var/log/xnux/last_outgoing_payload.json`.
+
+## Request
 
 ```http
 POST /v1/ingest HTTP/1.1
@@ -16,79 +18,79 @@ X-Xnux-Seq: 10423
 X-Xnux-Schema: 1
 ```
 
-TLS ≥ 1.2 且校验证书（没有“跳过校验”选项，私有 CA 用 `tls.ca_file`）；压缩后 ≤ 512 KB、解压后 ≤ 4 MB。默认每 15 秒采样、每 60 秒上报一次；有事件时立即上报。发送前每个字符串都经过[脱敏屏障](redaction.md)。
+TLS ≥ 1.2 with certificate verification (there is no "skip verification" option; use `tls.ca_file` for a private CA). ≤ 512 KB compressed, ≤ 4 MB decompressed. By default the agent samples every 15 seconds and reports every 60 seconds; when an event occurs it reports immediately. Every string passes through the [redaction barrier](redaction.md) before sending.
 
-## 顶层
+## Top level
 
-| 字段 | 说明 |
+| Field | Description |
 | --- | --- |
-| `v` | 协议版本，固定 1 |
-| `seq` | 单调递增序号，服务端据此去重（重发安全） |
-| `part` | 过大被拆分时的分片号 |
-| `sent_at` | 探针本地时间（Unix 秒） |
-| `agent_version` | 探针版本 |
-| `machine_fp` | sha256(machine-id + token) 前 16 位，用于发现“同一 token 被复制到多台机器” |
-| `host` | 主机信息：启动时、每 6 小时、变化时携带 |
-| `metrics[]` | 资源指标，按时间升序 |
-| `events[]` | 现场事件 |
-| `diag` | 探针自诊断：`rss_mb`、`spool_mb`、`kmsg_lost`、`dropped_metrics`、`collector_errors` |
-| `redactions` | 本条载荷里各脱敏规则的命中次数，如 `{"ipv4": 2}` |
+| `v` | Protocol version, always 1 |
+| `seq` | Monotonically increasing sequence number; the server deduplicates on it (safe to resend) |
+| `part` | Part number when an oversized payload is split |
+| `sent_at` | Agent local time (Unix seconds) |
+| `agent_version` | Agent version |
+| `machine_fp` | First 16 characters of sha256(machine-id + token), used to detect "the same token copied to multiple machines" |
+| `host` | Host information: included at startup, every 6 hours, and on change |
+| `metrics[]` | Resource metrics, in ascending time order |
+| `events[]` | Incident context events |
+| `diag` | Agent self-diagnostics: `rss_mb`, `spool_mb`, `kmsg_lost`, `dropped_metrics`, `collector_errors` |
+| `redactions` | Hit count for each redaction rule in this payload, e.g. `{"ipv4": 2}` |
 
 ## `host`
 
-| 字段 | 来源 |
+| Field | Source |
 | --- | --- |
-| `hostname` | 主机名；`hide_hostname: true` 时为 `host` |
-| `os` | `/etc/os-release` 的 `PRETTY_NAME` |
-| `kernel`、`arch` | `uname` |
-| `cores`、`uptime`、`virt` | CPU 数、开机秒数、虚拟化类型 |
-| `capabilities` | 实际开启的采集器：`metrics`、`temps`、`systemd`、`kmsg`、`authlog`、`procscan` |
+| `hostname` | Hostname; `host` when `hide_hostname: true` |
+| `os` | `PRETTY_NAME` from `/etc/os-release` |
+| `kernel`, `arch` | `uname` |
+| `cores`, `uptime`, `virt` | CPU count, seconds since boot, virtualization type |
+| `capabilities` | Collectors actually enabled: `metrics`, `temps`, `systemd`, `kmsg`, `authlog`, `procscan` |
 
-不采集：IP 地址、MAC、网卡列表、用户列表、已安装软件、文件内容、环境变量。
+Not collected: IP addresses, MAC addresses, network interface list, user list, installed software, file contents, environment variables.
 
 ## `metrics[]`
 
-| 字段 | 内容 |
+| Field | Contents |
 | --- | --- |
-| `ts` | 采样时间 |
-| `cpu` | `total_pct`、`iowait_pct`、`steal_pct` |
-| `load` | `l1`、`l5`、`l15` |
-| `mem` | `total_mb`、`available_mb`、`used_pct` |
-| `swap` | `total_mb`、`used_mb`、`in_ps`、`out_ps`（每秒换入 / 换出页） |
-| `disks[]` | `mount`、`fs`、`total_gb`、`free_gb`、`used_pct`、`inode_used_pct`、`growth_mb_h`、`days_to_full` |
-| `temps[]` | `name`、`c`（没有传感器时省略） |
+| `ts` | Sample time |
+| `cpu` | `total_pct`, `iowait_pct`, `steal_pct` |
+| `load` | `l1`, `l5`, `l15` |
+| `mem` | `total_mb`, `available_mb`, `used_pct` |
+| `swap` | `total_mb`, `used_mb`, `in_ps`, `out_ps` (pages swapped in / out per second) |
+| `disks[]` | `mount`, `fs`, `total_gb`, `free_gb`, `used_pct`, `inode_used_pct`, `growth_mb_h`, `days_to_full` |
+| `temps[]` | `name`, `c` (omitted when there are no sensors) |
 
 ## `events[]`
 
-| 字段 | 说明 |
+| Field | Description |
 | --- | --- |
-| `id` | 事件 ID；同一 ID 再次出现表示更新（计数增加等） |
-| `ts`、`last_ts` | 首次 / 最近发生时间 |
-| `type`、`severity` | 类型与级别（P0–P3） |
-| `count`、`key` | 防抖期内的次数；合并键（unit 名、进程名、来源网段等） |
-| `data` | 按类型的字段，见下表 |
-| `snapshot` | 严重事件的现场：最近 10 分钟指标序列，按内存和 CPU 排序的前 5 个进程（`pid`、`comm`、脱敏后的 `cmdline`、`uid`、`rss_mb`、`cpu_pct`、所属 `unit`） |
+| `id` | Event ID; the same ID appearing again means an update (count increased, etc.) |
+| `ts`, `last_ts` | First / most recent occurrence time |
+| `type`, `severity` | Type and severity (P0–P3) |
+| `count`, `key` | Number of occurrences within the debounce window; merge key (unit name, process name, source network, etc.) |
+| `data` | Type-specific fields, see the table below |
+| `snapshot` | Incident context for severe events: the last 10 minutes of metrics, and the top 5 processes by memory and by CPU (`pid`, `comm`, redacted `cmdline`, `uid`, `rss_mb`, `cpu_pct`, owning `unit`) |
 
 | type | data |
 | --- | --- |
-| `service_failed` | `unit`、`result`、`exit_code`、`signal`、`restarting`、`n_restarts`、`memory_peak_mb`、`log_tail[]`（该服务最近的日志行） |
-| `service_start_failed` | `unit`、`job_result`、`log_tail[]` |
-| `oom_kill` | `victim`、`pid`、`total_vm_mb`、`anon_rss_mb`、`file_rss_mb`、`shmem_rss_mb`、`oom_score_adj`、`scope`、`constraint`、`memcg` |
-| `proc_segfault` | `comm`、`pid`、`module` |
-| `disk_error`、`fs_readonly` | `device`、`message` |
-| `hung_task` | `comm`、`pid`、`blocked_seconds` |
-| `ssh_bruteforce`、`ssh_spray` | `source`（已脱敏网段）、`fail_count`、`user_count`、`top_users[]`、`window_seconds` |
-| `ssh_breach` | `source`、`user`、`method`、`prior_failures` |
+| `service_failed` | `unit`, `result`, `exit_code`, `signal`, `restarting`, `n_restarts`, `memory_peak_mb`, `log_tail[]` (the service's most recent log lines) |
+| `service_start_failed` | `unit`, `job_result`, `log_tail[]` |
+| `oom_kill` | `victim`, `pid`, `total_vm_mb`, `anon_rss_mb`, `file_rss_mb`, `shmem_rss_mb`, `oom_score_adj`, `scope`, `constraint`, `memcg` |
+| `proc_segfault` | `comm`, `pid`, `module` |
+| `disk_error`, `fs_readonly` | `device`, `message` |
+| `hung_task` | `comm`, `pid`, `blocked_seconds` |
+| `ssh_bruteforce`, `ssh_spray` | `source` (redacted network), `fail_count`, `user_count`, `top_users[]`, `window_seconds` |
+| `ssh_breach` | `source`, `user`, `method`, `prior_failures` |
 | `ssh_root_password_login` | `source` |
-| `sudo_sensitive` | `by_user`、`as_user`、`command`（已脱敏）、`pwd` |
-| `sudo_auth_fail` | `user`、`attempts` |
-| `user_created` | `name`、`uid` |
+| `sudo_sensitive` | `by_user`, `as_user`, `command` (redacted), `pwd` |
+| `sudo_auth_fail` | `user`, `attempts` |
+| `user_created` | `name`, `uid` |
 | `su_root` | `by_user` |
-| `proc_fileless`、`proc_deleted_exe`、`proc_stale_binary`、`proc_tmp_exec` | `pid`、`comm`、`exe`、`cmdline`、`uid`、`ppid_comm` |
-| `proc_reverse_shell` | 同上，加 `remote`（已脱敏） |
-| `swap_thrashing`、`mem_pressure` | `in_ps`、`available_mb`、`swap_used_mb` |
+| `proc_fileless`, `proc_deleted_exe`, `proc_stale_binary`, `proc_tmp_exec` | `pid`, `comm`, `exe`, `cmdline`, `uid`, `ppid_comm` |
+| `proc_reverse_shell` | Same as above, plus `remote` (redacted) |
+| `swap_thrashing`, `mem_pressure` | `in_ps`, `available_mb`, `swap_used_mb` |
 
-## 示例
+## Example
 
 ```json
 {
@@ -110,8 +112,8 @@ TLS ≥ 1.2 且校验证书（没有“跳过校验”选项，私有 CA 用 `tl
 }
 ```
 
-## 服务端怎么对待这些数据
+## How the server treats this data
 
-- 接入网关解压后、任何处理之前，对原始字节算 sha256，连同原文写入审计表（保留 7 天），[审计台](../README.md#透明度)展示的就是这份原文。
-- 访问日志不记请求体、不记 IP、不记 token；来源 IP 只写审计表。经 [Worker](relay.md) 转发时服务端只看到 Cloudflare 的地址。
-- 在控制台删除服务器会立即吊销 token，并由后台任务硬删除它的全部数据。
+- After decompression and before any processing, the ingest gateway computes sha256 over the raw bytes and writes it, together with the original content, to an audit table (kept for 7 days). The [console's transparency audit page](../README.md#verify-it-yourself) shows exactly this original content.
+- Access logs record no request bodies, no IPs and no tokens; the source IP is written only to the audit table. When relayed through the [Worker](relay.md), the server sees only Cloudflare's address.
+- Deleting a server in the console immediately revokes its token, and a background job hard-deletes all of its data.

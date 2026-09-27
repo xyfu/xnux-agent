@@ -1,53 +1,55 @@
 # xnux-agent
 
+English | [简体中文](README.zh-CN.md)
+
 The open-source agent of [Xnux](https://xnux.net): server monitoring that captures the scene when something breaks — crashes, OOM kills, intrusions — and redacts it on the machine before anything leaves.
 
-探针开源，数据出口可验证：你能看到每一个离开服务器的字节；我们永远拿不到你服务器的访问权限。
+The agent is open source and its output is verifiable: you can see every byte that leaves your server, and we never get access to your server.
 
 | | |
 | --- | --- |
-| `cmd/`, `internal/` | `xnux-agent`：Go，静态编译，amd64 / arm64，Linux ≥ 4.15 |
-| `relay/` | Cloudflare Worker 中转：`xnux-relay`（隐藏源站 IP）和 Bark 推送中转 |
-| `deploy/` | `install.sh` / `uninstall.sh`、systemd unit、配置样例 |
-| `docs/` | 安装、上报字段、脱敏规则、最小权限、Worker 中转 |
+| `cmd/`, `internal/` | `xnux-agent`: Go, statically linked, amd64 / arm64, Linux ≥ 4.15 |
+| `relay/` | Cloudflare Worker relays: `xnux-relay` (hides the origin IP) and a Bark push relay |
+| `deploy/` | `install.sh` / `uninstall.sh`, systemd unit, sample config |
+| `docs/` | Installation, reported fields, redaction rules, least privilege, Worker relay |
 
-上报协议和脱敏器在 [xnux-shared](https://github.com/xyfu/xnux-shared)，探针与服务端共用。License: Apache-2.0.
+The reporting protocol and the redactor live in [xnux-shared](https://github.com/xyfu/xnux-shared), shared by the agent and the server. License: Apache-2.0.
 
-## 黑匣子：不注册也能用
+## Black box: works without an account
 
-不带 token 安装，探针就是一台服务器的本地黑匣子：持续记录指标（24 小时）和崩溃、OOM、入侵现场（30 天），出事后一条命令查清楚。不联网、不发告警、免费。
+Installed without a token, the agent is a local black box for one server: it keeps recording metrics (24 hours) and crash, OOM and intrusion context (30 days), so one command tells you what happened. No network connections, no alerts, free.
 
 ```sh
 curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.sh | sudo sh
-xnux top        # 实时面板    xnux events / xnux event ID    # 现场
-xnux history    # 24 小时曲线  xnux status                    # 自检与健康度
+xnux top        # live dashboard     xnux events / xnux event ID    # incident context
+xnux history    # 24-hour charts     xnux status                    # self-check and health score
 ```
 
 ![xnux top](docs/img/xnux-top.png)
 
-需要多台集中查看、告警推送、AI 归因时：`sudo xnux connect --token xat_…`，不重启即切换为上报。详见 [docs/standalone.md](docs/standalone.md)。
+When you want several servers in one place, alert notifications or AI root-cause analysis: `sudo xnux connect --token xat_…` switches to reporting without a restart. See [docs/standalone.md](docs/standalone.md).
 
-## 上报到 Xnux
+## Report to Xnux
 
-在 Xnux 控制台「添加服务器」复制命令，或：
+Copy the command from "Add server" in the Xnux console, or:
 
 ```sh
 curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.sh | sudo sh -s -- --token xat_…
 ```
 
-脚本校验 sha256 后才安装，详见 [docs/install.md](docs/install.md)。
+The script installs only after checking sha256 sums; see [docs/install.md](docs/install.md).
 
-## 透明度验证三步
+## Verify it yourself
 
-| 想确认 | 怎么做 |
+| To check | How |
 | --- | --- |
-| 1. 探针会发什么 | `curl -fsSL …/install.sh \| sh -s -- --dry-run`（不装、不发，普通用户即可）；装好后 `xnux payload --next` |
-| 2. 刚才发了什么 | `xnux payload --last`（即 `/var/log/xnux/last_outgoing_payload.json`），与控制台审计台显示的原文和 sha256 对比 |
-| 3. 二进制是不是这份源码 | `git checkout vX.Y.Z && make agent VERSION=vX.Y.Z COMMIT=$(git rev-parse --short HEAD) && sha256sum bin/xnux-agent-linux-*`，与 Release 的 `SHA256SUMS` 对比；另有 cosign 签名 |
+| 1. What the agent will send | `curl -fsSL …/install.sh \| sh -s -- --dry-run` (installs and sends nothing, no root needed); once installed, `xnux payload --next` |
+| 2. What it just sent | `xnux payload --last` (i.e. `/var/log/xnux/last_outgoing_payload.json`); compare it and its sha256 with the original shown on the console's transparency audit page |
+| 3. That the binary is built from this source | `git checkout vX.Y.Z && make agent VERSION=vX.Y.Z COMMIT=$(git rev-parse --short HEAD) && sha256sum bin/xnux-agent-linux-*`, and compare with the release's `SHA256SUMS`; files are also cosign-signed |
 
-探针只有一个出站请求（`POST /v1/ingest`，独立模式下连这个也没有），不监听网络端口（命令行走本机 Unix Socket）、不接收远程指令、没有自动升级。字段见 [docs/payload.md](docs/payload.md)，脱敏见 [docs/redaction.md](docs/redaction.md)，不想用 root 运行见 [docs/least-privilege.md](docs/least-privilege.md)，隐藏源站 IP 见 [docs/relay.md](docs/relay.md)。
+The agent makes exactly one kind of outbound request (`POST /v1/ingest`, and not even that in standalone mode). It listens on no network port (the CLI talks to it over a local Unix socket), accepts no remote commands and never updates itself. Fields: [docs/payload.md](docs/payload.md); redaction: [docs/redaction.md](docs/redaction.md); running without root: [docs/least-privilege.md](docs/least-privilege.md); hiding the origin IP: [docs/relay.md](docs/relay.md).
 
-## 开发
+## Development
 
 ```sh
 make agent            # bin/xnux-agent-linux-{amd64,arm64}
@@ -56,4 +58,4 @@ make lint             # golangci-lint
 make dist             # everything a release publishes, with SHA256SUMS
 ```
 
-实现说明与规格差异见 [docs/agent.md](docs/agent.md)。
+Implementation notes and differences from the spec: [docs/agent.md](docs/agent.md).
