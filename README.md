@@ -1,3 +1,5 @@
+<img src="docs/img/xnux-icon.svg" width="72" alt="Xnux">
+
 # xnux-agent
 
 English | [简体中文](README.zh-CN.md)
