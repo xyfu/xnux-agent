@@ -9,12 +9,14 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/xyfu/xnux-shared/health"
 	"github.com/xyfu/xnux-shared/proto"
 
+	"github.com/xyfu/xnux-agent/internal/collect"
 	"github.com/xyfu/xnux-agent/internal/localhealth"
 	"github.com/xyfu/xnux-agent/internal/localstore"
 )
@@ -28,6 +30,11 @@ type topData struct {
 	Mode     string             `json:"mode"`
 	TopCPU   []proto.Process    `json:"top_cpu"`
 	TopRSS   []proto.Process    `json:"top_rss"`
+	// Net are the interface counters now; top shows the rate between two
+	// frames, 2 s apart (spec v1.1 delta 9.5).
+	Net *collect.NetCounters `json:"net,omitempty"`
+	// rate is that rate, or the sampled one on the first frame.
+	rate *proto.Net
 }
 
 type statusData struct {
@@ -54,11 +61,21 @@ func top(args []string, env Env) error {
 	if *asJSON || !env.TTY {
 		*once = true
 	}
+	var prev *collect.NetCounters
 	for {
 		var d topData
 		if err := call(env, "top", nil, &d); err != nil {
 			return err
 		}
+		if d.Metric != nil {
+			d.rate = d.Metric.Net
+		}
+		if prev != nil && d.Net != nil {
+			if n, ok := collect.NetRate(*prev, *d.Net); ok {
+				d.rate = &n
+			}
+		}
+		prev = d.Net
 		if *asJSON {
 			return printJSON(env.Stdout, d)
 		}
@@ -120,6 +137,9 @@ func renderTop(b *strings.Builder, d topData, env Env) {
 			extra += fmt.Sprintf(", full in %.1f days", *dk.DaysToFull)
 		}
 		bar(trunc(dk.Mount, 8), dk.UsedPct, extra)
+	}
+	if n := d.rate; n != nil {
+		fmt.Fprintf(b, "%-8s down %-11s up %s\n", "NET", collect.FormatBps(n.RxBps), collect.FormatBps(n.TxBps))
 	}
 	if len(m.Temps) > 0 {
 		hot := m.Temps[0]
@@ -314,9 +334,11 @@ func event(args []string, env Env) error {
 	}
 	if len(d.Before) > 0 {
 		fmt.Fprintf(w, "\n%sthe 10 minutes before%s\n", c.bold, c.reset)
-		series(w, "cpu %", d.Before, func(m localstore.Minute) *float64 { v := m.CPU; return &v }, d.Before[0].TS, 60)
-		series(w, "mem %", d.Before, func(m localstore.Minute) *float64 { v := m.MemUsed; return &v }, d.Before[0].TS, 60)
-		series(w, "load1", d.Before, func(m localstore.Minute) *float64 { v := m.Load1; return &v }, d.Before[0].TS, 60)
+		for _, def := range metricDefs {
+			if contains([]string{"cpu", "mem", "load", "net"}, def.name) {
+				series(w, def.label, d.Before, def.get, def.show, d.Before[0].TS, 60)
+			}
+		}
 	}
 	return nil
 }
@@ -326,19 +348,24 @@ func event(args []string, env Env) error {
 var metricDefs = []struct {
 	name, label string
 	get         func(localstore.Minute) *float64
+	show        func(float64) string // default: one decimal
 }{
-	{"cpu", "cpu %", func(m localstore.Minute) *float64 { v := m.CPU; return &v }},
-	{"iowait", "iowait %", func(m localstore.Minute) *float64 { v := m.IOWait; return &v }},
-	{"load", "load1", func(m localstore.Minute) *float64 { v := m.Load1; return &v }},
-	{"mem", "mem %", func(m localstore.Minute) *float64 { v := m.MemUsed; return &v }},
-	{"swap", "swap MB", func(m localstore.Minute) *float64 { return m.SwapUsedMB }},
-	{"disk", "disk %", func(m localstore.Minute) *float64 { return m.DiskUsedMax }},
-	{"temp", "temp °C", func(m localstore.Minute) *float64 { return m.TempMax }},
+	{"cpu", "cpu %", func(m localstore.Minute) *float64 { v := m.CPU; return &v }, nil},
+	{"iowait", "iowait %", func(m localstore.Minute) *float64 { v := m.IOWait; return &v }, nil},
+	{"load", "load1", func(m localstore.Minute) *float64 { v := m.Load1; return &v }, nil},
+	{"mem", "mem %", func(m localstore.Minute) *float64 { v := m.MemUsed; return &v }, nil},
+	{"swap", "swap MB", func(m localstore.Minute) *float64 { return m.SwapUsedMB }, nil},
+	{"disk", "disk %", func(m localstore.Minute) *float64 { return m.DiskUsedMax }, nil},
+	{"temp", "temp °C", func(m localstore.Minute) *float64 { return m.TempMax }, nil},
+	{"net", "down", func(m localstore.Minute) *float64 { return m.NetRx }, bps},
+	{"net", "up", func(m localstore.Minute) *float64 { return m.NetTx }, bps},
 }
+
+func bps(v float64) string { return collect.FormatBps(int64(v)) }
 
 func history(args []string, env Env) error {
 	fs, asJSON := newFlags("history", env)
-	metrics := fs.String("metric", "cpu,mem,load,disk", "metrics: cpu, iowait, load, mem, swap, disk, temp")
+	metrics := fs.String("metric", "cpu,mem,load,disk,net", "metrics: cpu, iowait, load, mem, swap, disk, temp, net")
 	hours := fs.Int("hours", 24, "hours back (1–24)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -370,7 +397,7 @@ func history(args []string, env Env) error {
 	for _, def := range metricDefs {
 		for _, n := range want {
 			if n == def.name {
-				series(env.Stdout, def.label, mins, def.get, start, step)
+				series(env.Stdout, def.label, mins, def.get, def.show, start, step)
 			}
 		}
 	}
@@ -382,7 +409,8 @@ var blocks = []rune("▁▂▃▄▅▆▇█")
 // series prints label, a sparkline with one column per step seconds from
 // start (the worst value in each; blank where there is no data), and
 // min / avg / max.
-func series(w io.Writer, label string, mins []localstore.Minute, get func(localstore.Minute) *float64, start, step int64) {
+func series(w io.Writer, label string, mins []localstore.Minute, get func(localstore.Minute) *float64,
+	show func(float64) string, start, step int64) {
 	var cols []*float64
 	lo, hi, sum, n := 0.0, 0.0, 0.0, 0
 	for _, m := range mins {
@@ -423,7 +451,10 @@ func series(w io.Writer, label string, mins []localstore.Minute, get func(locals
 		i := int(*v / top * float64(len(blocks)))
 		line.WriteRune(blocks[max(0, min(i, len(blocks)-1))])
 	}
-	fmt.Fprintf(w, "%-8s %s  %.1f / %.1f / %.1f\n", label, line.String(), lo, sum/float64(n), hi)
+	if show == nil {
+		show = func(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
+	}
+	fmt.Fprintf(w, "%-8s %s  %s / %s / %s\n", label, line.String(), show(lo), show(sum/float64(n)), show(hi))
 }
 
 // ---- status ----

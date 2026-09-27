@@ -2,7 +2,7 @@
 
 English | [简体中文](agent.zh-CN.md)
 
-Implemented: resource metric collection, the redaction barrier, batched reporting with offline buffering, dry-run and the mirror file (stage 1); incident-context event capture: service crashes, kernel events, security logs, suspicious-process scans, incident-context snapshots (stage 4); local black box: standalone mode, local storage, the `xnux` CLI, connect / disconnect hot switching (stage 11; user guide in [standalone.md](standalone.md)).
+Implemented: resource metric collection, the redaction barrier, batched reporting with offline buffering, dry-run and the mirror file (stage 1); incident-context event capture: service crashes, kernel events, security logs, suspicious-process scans, incident-context snapshots (stage 4); network throughput (stage 9); local black box: standalone mode, local storage, the `xnux` CLI, connect / disconnect hot switching (stage 11; user guide in [standalone.md](standalone.md)).
 
 ## Commands
 
@@ -127,6 +127,19 @@ Differences from the spec:
 
 - The systemd unit does not add `/run/xnux` to `ReadWritePaths`: `RuntimeDirectory=xnux` is already writable under `ProtectSystem=strict`, and the directory is created only just before startup, so listing it in `ReadWritePaths` would actually make startup fail if the directory is missing.
 - The spec requires the install script to "ask whether to add the current sudo user"; it asks only when run interactively from a terminal (`/dev/tty` is readable) and `SUDO_USER` is set, so `curl | sudo sh` does not hang in CI.
+
+## Network throughput (stage 9)
+
+- Source: `/proc/net/dev`, read on the metric ticker through a file handle kept open; no external commands. The rate is the byte-counter difference × 8 ÷ the time between the two reads (the tick's exact time, not rounded to the second).
+- Interfaces: all except `lo`, `docker*`, `veth*`, `br-*`, `virbr*`, `cni*`, `flannel*`, `cali*`, summed. `network.include` (glob patterns) replaces that choice with the interfaces it names; `network.exclude` always applies.
+- The first sample and any sample where an interface appeared or went away, or a counter went backwards (wrap, interface recreated, reboot), only record the baseline and omit `net`, so a restarted interface never shows a spike.
+- `xnux top` asks the daemon for the counters on every frame and shows the rate between two frames 2 s apart (the first frame shows the last sample's rate). The metric ring keeps the average per minute for `xnux history`; a ring written by an older version is converted on start, keeping its history.
+- Cost: about 8 µs more per sample and one 16-byte allocation (the `net` object); the counter buffers are reused.
+
+| Check | Method | Result |
+| --- | --- | --- |
+| F9-4 accuracy < 5% | A generator sending exactly 10,000,000 B/s over TCP for 40 s (80.00 Mbps), `network.include: [lo]` | `xnux top` 79.7–81.4 Mbps per 2-s frame, sampled points 80.07–80.11 Mbps |
+| No spike after an interface restarts | Unit test: counters reset between samples | That sample omits `net`; the next is normal |
 
 ## Resource benchmark (F1-9)
 

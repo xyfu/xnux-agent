@@ -21,10 +21,10 @@ Same binary and same install script as connected mode, just without `--token`. T
 
 | Command | Purpose |
 | --- | --- |
-| `xnux top` | Live terminal dashboard: CPU, load, memory, swap, disks (with time until full), temperatures, top 5 processes, last 5 events, health score; refreshes every 2 seconds, `--once` prints a single frame |
+| `xnux top` | Live terminal dashboard: CPU, load, memory, swap, disks (with time until full), temperatures, network download / upload rate (from counters 2 s apart), top 5 processes, last 5 events, health score; refreshes every 2 seconds, `--once` prints a single frame |
 | `xnux events [--type T,…] [--since 24h] [--severity P0,…]` | Events recorded on this machine (kept for 30 days) |
 | `xnux event ID` | Full incident context for one event: exit code, signal, log tail, process snapshot, charts of the 10 minutes before the event |
-| `xnux history [--metric cpu,mem,load,disk] [--hours 24]` | Terminal line charts of the last 24 hours of metrics |
+| `xnux history [--metric cpu,mem,load,disk,net] [--hours 24]` | Terminal line charts of the last 24 hours of metrics (`net`: average download / upload rate per minute) |
 | `xnux status` | Collectors, mode (standalone / connected), storage usage, breakdown of health score deductions |
 | `xnux payload [--last\|--next]` | What was last reported / what will be reported next |
 | `xnux connect --token xat_… [--endpoint URL]` | Switch to connected mode (requires root) |

@@ -12,6 +12,7 @@ import (
 	"github.com/xyfu/xnux-shared/proto"
 	"github.com/xyfu/xnux-shared/sanitize"
 
+	"github.com/xyfu/xnux-agent/internal/collect"
 	"github.com/xyfu/xnux-agent/internal/config"
 	"github.com/xyfu/xnux-agent/internal/ipc"
 	"github.com/xyfu/xnux-agent/internal/localhealth"
@@ -43,6 +44,9 @@ func (a *agent) openLocal(ctx context.Context) (func(), error) {
 		_ = a.local.Close()
 		return nil, err
 	}
+	// Without /proc/net/dev "xnux top" shows the sampled throughput.
+	a.netr, _ = collect.OpenNet(filepath.Join(a.o.Root, "proc"),
+		collect.NetFilter{Include: a.cfg.Network.Include, Exclude: a.cfg.Network.Exclude})
 	a.reload = make(chan chan error)
 	a.publishView()
 	ictx, stop := context.WithCancel(ctx)
@@ -58,6 +62,7 @@ func (a *agent) openLocal(ctx context.Context) (func(), error) {
 		<-done
 		_ = a.mring.Close()
 		_ = a.local.Close()
+		a.netr.Close()
 	}, nil
 }
 
@@ -266,6 +271,14 @@ func (a *agent) top(ctx context.Context) map[string]any {
 		"hostname": a.host.Hostname, "mode": map[bool]string{true: "standalone", false: "connected"}[a.view.Load().Standalone]}
 	if sn != nil {
 		out["top_cpu"], out["top_rss"] = sn.TopCPU, sn.TopRSS
+	}
+	if a.netr != nil {
+		a.netMu.Lock()
+		c, err := a.netr.Read(time.Now())
+		a.netMu.Unlock()
+		if err == nil {
+			out["net"] = c
+		}
 	}
 	return out
 }

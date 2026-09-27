@@ -10,7 +10,7 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/download/@VERSION@/instal
 
 | Command | What it does |
 | --- | --- |
-| `xnux top` | Live dashboard: CPU, load, memory, disks, temperature, top processes, recent events, health score |
+| `xnux top` | Live dashboard: CPU, load, memory, disks, temperature, network download / upload, top processes, recent events, health score |
 | `xnux events` / `xnux event ID` | Event list / full context (exit code, log tail, process snapshot, the 10 minutes before) |
 | `xnux history` | Metric charts for the last 24 hours |
 | `xnux status` | Collectors, mode, health score deductions |

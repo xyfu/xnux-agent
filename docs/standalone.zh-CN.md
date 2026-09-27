@@ -21,10 +21,10 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 
 | 命令 | 作用 |
 | --- | --- |
-| `xnux top` | 终端实时面板：CPU、负载、内存、Swap、磁盘（含写满倒计时）、温度、Top 5 进程、最近 5 条事件、健康度；每 2 秒刷新，`--once` 只打印一帧 |
+| `xnux top` | 终端实时面板：CPU、负载、内存、Swap、磁盘（含写满倒计时）、温度、网络下行 / 上行速率（按 2 秒差值计算）、Top 5 进程、最近 5 条事件、健康度；每 2 秒刷新，`--once` 只打印一帧 |
 | `xnux events [--type T,…] [--since 24h] [--severity P0,…]` | 本机记录的事件（保留 30 天） |
 | `xnux event ID` | 一个事件的完整现场：退出码、信号、日志尾部、进程快照、事发前 10 分钟曲线 |
-| `xnux history [--metric cpu,mem,load,disk] [--hours 24]` | 最近 24 小时指标的终端折线图 |
+| `xnux history [--metric cpu,mem,load,disk,net] [--hours 24]` | 最近 24 小时指标的终端折线图（`net` 为每分钟平均下行 / 上行速率） |
 | `xnux status` | 采集器、模式（独立 / 上报）、存储占用、健康度扣分明细 |
 | `xnux payload [--last\|--next]` | 最近一次上报 / 下一次将要上报的内容 |
 | `xnux connect --token xat_… [--endpoint URL]` | 切到上报模式（需 root） |

@@ -59,6 +59,7 @@ TLS ≥ 1.2 且校验证书（没有“跳过校验”选项，私有 CA 用 `tl
 | `swap` | `total_mb`、`used_mb`、`in_ps`、`out_ps`（每秒换入 / 换出页） |
 | `disks[]` | `mount`、`fs`、`total_gb`、`free_gb`、`used_pct`、`inode_used_pct`、`growth_mb_h`、`days_to_full` |
 | `temps[]` | `name`、`c`（没有传感器时省略） |
+| `net` | `rx_bps`、`tx_bps`：与上一次采样相比，纳入网卡合计的接收（下行）、发送（上行）速率，单位 bit/s，整数。首次采样，以及有网卡新增、消失或计数回退的那一次采样省略。只读 `/proc/net/dev` 的字节计数：不采集地址、连接，也不上报网卡名 |
 
 ## `events[]`
 

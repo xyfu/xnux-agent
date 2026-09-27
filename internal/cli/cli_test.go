@@ -54,7 +54,7 @@ func TestSeriesShowsGaps(t *testing.T) {
 		mins = append(mins, localstore.Minute{TS: 6000 + i*60, CPU: float64(i * 10)})
 	}
 	var b bytes.Buffer
-	series(&b, "cpu %", mins, func(m localstore.Minute) *float64 { v := m.CPU; return &v }, 6000, 60)
+	series(&b, "cpu %", mins, func(m localstore.Minute) *float64 { v := m.CPU; return &v }, nil, 6000, 60)
 	line := b.String()
 	if !strings.Contains(line, "▁▁▂▃  ▅▆▇█") {
 		t.Fatalf("got %q", line)

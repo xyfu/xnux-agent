@@ -1,6 +1,8 @@
 package localstore
 
 import (
+	"encoding/binary"
+	"hash/crc32"
 	"os"
 	"path/filepath"
 	"testing"
@@ -81,6 +83,9 @@ func TestRing(t *testing.T) {
 		ts := start.Add(time.Duration(i) * 15 * time.Second).Unix()
 		m := proto.Metric{TS: ts, CPU: proto.CPU{TotalPct: float64(i % 4 * 10)}, Mem: proto.Mem{TotalMB: 1000, AvailableMB: 250, UsedPct: 75},
 			Disks: []proto.Disk{{Mount: "/", UsedPct: 50}, {Mount: "/data", UsedPct: 81, DaysToFull: &days}}}
+		if i%4 != 0 { // one tick a minute without throughput
+			m.Net = &proto.Net{RxBps: int64(i%4) * 1000, TxBps: 500}
+		}
 		if err := r.Add(m); err != nil {
 			t.Fatal(err)
 		}
@@ -90,7 +95,8 @@ func TestRing(t *testing.T) {
 		t.Fatalf("read %d minutes: %v", len(got), err)
 	}
 	m := got[0]
-	if m.CPU != 15 || m.MemAvail != 25 || *m.DiskUsedMax != 81 || *m.DiskDaysMin != 12.5 || m.SwapUsedMB != nil || m.TempMax != nil {
+	if m.CPU != 15 || m.MemAvail != 25 || *m.DiskUsedMax != 81 || *m.DiskDaysMin != 12.5 || m.SwapUsedMB != nil || m.TempMax != nil ||
+		m.NetRx == nil || *m.NetRx != 2000 || *m.NetTx != 500 {
 		t.Fatalf("minute: %+v", m)
 	}
 	fi, _ := os.Stat(path)
@@ -105,5 +111,40 @@ func TestRing(t *testing.T) {
 	got2, _ := r.Read(start)
 	if len(got2) != 19 {
 		t.Fatalf("after torn record: %d", len(got2))
+	}
+}
+
+// A ring written before network throughput is converted in place,
+// keeping its minutes.
+func TestRingUpgradeV1(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metrics.ring")
+	now := time.Now().Truncate(time.Minute).Add(-10 * time.Minute)
+	old := make([]byte, Slots*recordSizeV1)
+	for i := 0; i < 3; i++ {
+		m := Minute{TS: now.Add(time.Duration(i) * time.Minute).Unix(), CPU: float64(10 * i), MemTotalMB: 1000, TempMax: f(40)}
+		rec := encode(m)[:recordSizeV1] // the minute and the first 15 values sit where they did
+		for j := 64; j < recordSizeV1-4; j++ {
+			rec[j] = 0
+		}
+		binary.LittleEndian.PutUint32(rec[recordSizeV1-4:], crc32.ChecksumIEEE(rec[:recordSizeV1-4]))
+		copy(old[(m.TS/60)%Slots*recordSizeV1:], rec)
+	}
+	if err := os.WriteFile(path, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := OpenRing(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
+	got, err := r.Read(now)
+	if err != nil || len(got) != 3 || got[2].CPU != 20 || *got[2].TempMax != 40 || got[2].NetRx != nil {
+		t.Fatalf("after upgrade: %+v %v", got, err)
+	}
+	if fi, _ := os.Stat(path); fi.Size() != Slots*RecordSize || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("file %d %v", fi.Size(), fi.Mode())
+	}
+	if err := r.Add(proto.Metric{TS: time.Now().Unix(), Net: &proto.Net{RxBps: 1, TxBps: 2}}); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -1,6 +1,6 @@
 // Package collect samples /proc and /sys on a single ticker: CPU, load,
-// memory, swap, disks, temperatures and host info (spec A2). It never runs
-// external commands.
+// memory, swap, disks, temperatures, network throughput and host info
+// (spec A2, spec v1.1 delta 9). It never runs external commands.
 package collect
 
 import (

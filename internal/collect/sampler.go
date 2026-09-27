@@ -20,6 +20,8 @@ type Options struct {
 	Statfs func(path string) (statfsResult, error)
 	// DiskGrowth restores the per-mount growth rings saved in state.json.
 	DiskGrowth map[string][][2]int64
+	// Net chooses the interfaces whose throughput is reported.
+	Net NetFilter
 }
 
 // Sampler takes one metric sample per call. It is not safe for concurrent use.
@@ -41,6 +43,10 @@ type Sampler struct {
 	growth        map[string]growthRing
 
 	sensors []sensor
+
+	net      *NetReader
+	prevNet  NetCounters
+	spareNet []Iface
 }
 
 // New opens the /proc files once and discovers sensors.
@@ -79,6 +85,8 @@ func New(opts Options) (*Sampler, error) {
 	}
 	// vmstat is optional: without it swap rates are reported as 0.
 	s.vmstat, _ = openProcFile(filepath.Join(opts.ProcRoot, "vmstat"), 16384)
+	// So is net/dev: without it there is no throughput.
+	s.net, _ = OpenNet(opts.ProcRoot, opts.Net)
 
 	full, err := os.ReadFile(filepath.Join(opts.ProcRoot, "stat"))
 	if err != nil {
@@ -125,7 +133,8 @@ func (s *Sampler) Sample(now time.Time) (proto.Metric, bool) {
 	first := !s.hasPrevCPU
 	s.prevCPU, s.hasPrevCPU = cur, true
 	if first || !ok {
-		s.sampleSwapRates(now) // establish the swap baseline too
+		s.sampleSwapRates(now) // establish the swap and network baselines too
+		s.sampleNet(now)
 		return proto.Metric{}, false
 	}
 
@@ -153,6 +162,7 @@ func (s *Sampler) Sample(now time.Time) (proto.Metric, bool) {
 	}
 	m.Disks = s.sampleDisks(now)
 	m.Temps = sampleTemps(s.sensors)
+	m.Net = s.sampleNet(now)
 	return m, true
 }
 
@@ -225,4 +235,5 @@ func (s *Sampler) Close() {
 	for _, sn := range s.sensors {
 		sn.f.Close()
 	}
+	s.net.Close()
 }

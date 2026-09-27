@@ -2,7 +2,7 @@
 
 [English](agent.md) | 简体中文
 
-已实现：资源指标采集、脱敏屏障、批量上报与断网缓冲、dry-run 与镜像文件（阶段 1）；现场事件捕获：服务崩溃、内核事件、安全日志、可疑进程巡检、现场快照（阶段 4）；本地黑匣子：独立模式、本地存储、`xnux` 命令行、connect / disconnect 热切换（阶段 11，用户说明见 [standalone.zh-CN.md](standalone.zh-CN.md)）。
+已实现：资源指标采集、脱敏屏障、批量上报与断网缓冲、dry-run 与镜像文件（阶段 1）；现场事件捕获：服务崩溃、内核事件、安全日志、可疑进程巡检、现场快照（阶段 4）；网络带宽（阶段 9）；本地黑匣子：独立模式、本地存储、`xnux` 命令行、connect / disconnect 热切换（阶段 11，用户说明见 [standalone.zh-CN.md](standalone.zh-CN.md)）。
 
 ## 命令
 
@@ -127,6 +127,19 @@ auth.log/journal ┼─► 规则引擎（清洗 → 安全状态机 → 防抖�
 
 - systemd unit 未把 `/run/xnux` 加进 `ReadWritePaths`：`RuntimeDirectory=xnux` 在 `ProtectSystem=strict` 下本来就可写，且目录在启动前才创建，写进 `ReadWritePaths` 反而会在目录缺失时启动失败。
 - 规格要求安装脚本"询问是否把当前 sudo 用户加入"；只有从终端交互运行（`/dev/tty` 可读）且存在 `SUDO_USER` 时才会问，`curl | sudo sh` 在 CI 中不会卡住。
+
+## 网络带宽（阶段 9）
+
+- 数据源：`/proc/net/dev`，在指标 ticker 上用常开的文件句柄读取，不调用外部命令。速率 = 字节计数差 × 8 ÷ 两次读取的时间差（用 tick 的精确时间，不取整到秒）。
+- 网卡：除 `lo`、`docker*`、`veth*`、`br-*`、`virbr*`、`cni*`、`flannel*`、`cali*` 外全部求和。`network.include`（glob）改为只统计它列出的网卡；`network.exclude` 始终生效。
+- 首次采样，以及有网卡新增、消失或计数回退（回绕、网卡重建、重启）的那一次采样只记基准、省略 `net`，网卡重启后不会出现尖峰。
+- `xnux top` 每帧向守护进程取一次计数，显示相隔 2 秒的两帧之间的速率（第一帧显示最近一次采样的速率）。指标环形文件保存每分钟平均值供 `xnux history` 使用；旧版本写的环形文件启动时原地转换，历史保留。
+- 开销：每次采样多约 8 µs，一次 16 字节分配（`net` 对象）；计数缓冲区复用。
+
+| 验收项 | 方法 | 结果 |
+| --- | --- | --- |
+| F9-4 误差 < 5% | 发生器经 TCP 恰好每秒发送 10,000,000 字节，持续 40 秒（80.00 Mbps），`network.include: [lo]` | `xnux top` 每 2 秒一帧 79.7–81.4 Mbps，采样点 80.07–80.11 Mbps |
+| 重启网卡后无尖峰 | 单测：两次采样之间计数归零 | 该次采样省略 `net`，下一次正常 |
 
 ## 资源基准（F1-9）
 

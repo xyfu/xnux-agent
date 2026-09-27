@@ -24,6 +24,9 @@ procscan:
 sanitize:
   mask_email: true
   extra_patterns: []                 # custom redaction regexes; built-in rules cannot be disabled
+network:                             # interfaces summed into the throughput (glob patterns)
+  include: []                        # empty: all but lo, docker*, veth*, br-*, virbr*, cni*, flannel*, cali*
+  exclude: []                        # always left out
 tls:
   ca_file: ""                        # trust this CA for the endpoint (a private CA)
 proxy: ""                            # optional HTTP(S) proxy

@@ -122,7 +122,8 @@ func Run(ctx context.Context, o Options) error {
 	if st != nil {
 		st.View(func(d *state.Data) { growth = d.DiskGrowth })
 	}
-	sampler, err := collect.New(collect.Options{Root: o.Root, DiskGrowth: growth})
+	sampler, err := collect.New(collect.Options{Root: o.Root, DiskGrowth: growth,
+		Net: collect.NetFilter{Include: cfg.Network.Include, Exclude: cfg.Network.Exclude}})
 	if err != nil {
 		return err
 	}
@@ -189,6 +190,8 @@ type agent struct {
 	view    atomic.Pointer[view]
 	localMu sync.Mutex
 	shared  localState
+	netMu   sync.Mutex
+	netr    *collect.NetReader // "xnux top" reads the counters itself, every 2 s
 
 	sampleErrors int
 
@@ -462,7 +465,7 @@ func (a *agent) sample(t time.Time) {
 	if !a.cfg.Collectors.Metrics {
 		return
 	}
-	m, ok := a.sampler.Sample(t.Truncate(time.Second))
+	m, ok := a.sampler.Sample(t) // the exact time: rates divide by it
 	if !ok {
 		a.sampleErrors++
 		return
@@ -713,6 +716,11 @@ func check(ctx context.Context, o Options, cfg *config.Config, s *collect.Sample
 	<-t.C
 	if m, good := s.Sample(time.Now()); good {
 		line("metrics", fmt.Sprintf("cpu %.1f%%, mem %.1f%%, %d disk(s)", m.CPU.TotalPct, m.Mem.UsedPct, len(m.Disks)), true)
+		if m.Net != nil {
+			info("network", fmt.Sprintf("down %s, up %s", collect.FormatBps(m.Net.RxBps), collect.FormatBps(m.Net.TxBps)))
+		} else {
+			info("network", "no interfaces counted (see network.include / network.exclude)")
+		}
 	} else {
 		line("metrics", "cannot read /proc", false)
 		ok = false

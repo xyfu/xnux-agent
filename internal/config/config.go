@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"strings"
 
@@ -28,6 +29,7 @@ type Config struct {
 	Security   Security   `yaml:"security"`
 	Procscan   Procscan   `yaml:"procscan"`
 	Sanitize   Sanitize   `yaml:"sanitize"`
+	Network    Network    `yaml:"network"`
 	TLS        TLS        `yaml:"tls"`
 	Proxy      string     `yaml:"proxy"`
 }
@@ -59,6 +61,14 @@ type Procscan struct {
 type Sanitize struct {
 	MaskEmail     bool     `yaml:"mask_email"`
 	ExtraPatterns []string `yaml:"extra_patterns"`
+}
+
+// Network picks the interfaces summed into the throughput (spec v1.1
+// delta 9.2): glob patterns. Without include every interface counts except
+// loopback and container / VM bridges and veths; exclude always applies.
+type Network struct {
+	Include []string `yaml:"include"`
+	Exclude []string `yaml:"exclude"`
 }
 
 type TLS struct {
@@ -148,6 +158,11 @@ func (c *Config) Validate() error {
 	for _, p := range c.Sanitize.ExtraPatterns {
 		if _, err := regexp.Compile(p); err != nil {
 			errs = append(errs, fmt.Errorf("sanitize.extra_patterns: %q: %w", p, err))
+		}
+	}
+	for _, p := range append(append([]string(nil), c.Network.Include...), c.Network.Exclude...) {
+		if _, err := path.Match(p, ""); err != nil || p == "" {
+			errs = append(errs, fmt.Errorf("network: %q is not a valid glob pattern", p))
 		}
 	}
 	// The security state keeps at most 64 failure times and 32 user names

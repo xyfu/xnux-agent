@@ -15,9 +15,11 @@ import (
 const (
 	// Slots is one day of minutes.
 	Slots = 1440
-	// RecordSize is one minute on disk: the minute, 15 four-byte values,
+	// RecordSize is one minute on disk: the minute, 17 four-byte values,
 	// 4 spare bytes and a CRC.
-	RecordSize = 72
+	RecordSize = 80
+	// recordSizeV1 is the layout before network throughput: 15 values.
+	recordSizeV1 = 72
 )
 
 // Minute is one minute of metrics: averages, except disk and temperature
@@ -39,6 +41,8 @@ type Minute struct {
 	DiskDaysMin *float64 `json:"disk_days_to_full_min,omitempty"`
 	InodeMax    *float64 `json:"inode_used_max_pct,omitempty"`
 	TempMax     *float64 `json:"temp_max_c,omitempty"`
+	NetRx       *float64 `json:"net_rx_bps,omitempty"` // average bit/s received
+	NetTx       *float64 `json:"net_tx_bps,omitempty"` // average bit/s sent
 }
 
 // Ring is the metrics file: Slots fixed-size records indexed by minute.
@@ -58,7 +62,12 @@ func OpenRing(path string) (*Ring, error) {
 	if err != nil {
 		return nil, err
 	}
-	if fi, err := f.Stat(); err == nil && fi.Size() != Slots*RecordSize {
+	fi, err := f.Stat()
+	if err == nil && fi.Size() == Slots*recordSizeV1 {
+		if f, err = upgradeV1(path, f); err != nil {
+			return nil, err
+		}
+	} else if err == nil && fi.Size() != Slots*RecordSize {
 		if err := f.Truncate(Slots * RecordSize); err != nil {
 			_ = f.Close()
 			return nil, err
@@ -78,6 +87,8 @@ type acc struct {
 	swapN                                           int
 	disk, days, inode, temp                         float64
 	hasDisk, hasDays, hasInode, hasTemp             bool
+	netRx, netTx                                    float64
+	netN                                            int
 }
 
 // Add folds one sample into its minute; when a new minute starts, the
@@ -127,6 +138,11 @@ func (r *Ring) Add(m proto.Metric) error {
 			a.temp, a.hasTemp = t.C, true
 		}
 	}
+	if m.Net != nil {
+		a.netRx += float64(m.Net.RxBps)
+		a.netTx += float64(m.Net.TxBps)
+		a.netN++
+	}
 	return nil
 }
 
@@ -148,6 +164,9 @@ func (a *acc) minuteRecord() Minute {
 	}
 	if a.hasTemp {
 		m.TempMax = f(a.temp)
+	}
+	if a.netN > 0 {
+		m.NetRx, m.NetTx = f(a.netRx/float64(a.netN)), f(a.netTx/float64(a.netN))
 	}
 	return m
 }
@@ -173,7 +192,7 @@ func encode(m Minute) []byte {
 	binary.LittleEndian.PutUint32(b[0:], uint32(m.TS/60)) //nolint:gosec // minutes since 1970 fit until 10136
 	vals := []float32{float32(m.CPU), float32(m.IOWait), float32(m.Steal), float32(m.Load1), float32(m.Load5), float32(m.Load15),
 		float32(m.MemUsed), float32(m.MemAvail), float32(m.MemTotalMB), opt(m.SwapUsedMB), opt(m.SwapInPS), opt(m.DiskUsedMax),
-		opt(m.DiskDaysMin), opt(m.InodeMax), opt(m.TempMax)}
+		opt(m.DiskDaysMin), opt(m.InodeMax), opt(m.TempMax), opt(m.NetRx), opt(m.NetTx)}
 	for i, v := range vals {
 		binary.LittleEndian.PutUint32(b[4+4*i:], math.Float32bits(v))
 	}
@@ -181,8 +200,11 @@ func encode(m Minute) []byte {
 	return b
 }
 
+// decode reads a record of either layout; a version 1 record has no
+// network values.
 func decode(b []byte) (Minute, bool) {
-	if binary.LittleEndian.Uint32(b[RecordSize-4:]) != crc32.ChecksumIEEE(b[:RecordSize-4]) {
+	size := len(b)
+	if binary.LittleEndian.Uint32(b[size-4:]) != crc32.ChecksumIEEE(b[:size-4]) {
 		return Minute{}, false
 	}
 	minute := binary.LittleEndian.Uint32(b[0:])
@@ -190,10 +212,39 @@ func decode(b []byte) (Minute, bool) {
 		return Minute{}, false
 	}
 	v := func(i int) float32 { return math.Float32frombits(binary.LittleEndian.Uint32(b[4+4*i:])) }
-	return Minute{TS: int64(minute) * 60, CPU: float64(v(0)), IOWait: float64(v(1)), Steal: float64(v(2)), Load1: float64(v(3)),
+	m := Minute{TS: int64(minute) * 60, CPU: float64(v(0)), IOWait: float64(v(1)), Steal: float64(v(2)), Load1: float64(v(3)),
 		Load5: float64(v(4)), Load15: float64(v(5)), MemUsed: float64(v(6)), MemAvail: float64(v(7)), MemTotalMB: float64(v(8)),
 		SwapUsedMB: back(v(9)), SwapInPS: back(v(10)), DiskUsedMax: back(v(11)), DiskDaysMin: back(v(12)), InodeMax: back(v(13)),
-		TempMax: back(v(14))}, true
+		TempMax: back(v(14))}
+	if size == RecordSize {
+		m.NetRx, m.NetTx = back(v(15)), back(v(16))
+	}
+	return m, true
+}
+
+// upgradeV1 rewrites a version 1 ring in the current layout, keeping its
+// minutes. The new file replaces the old by rename, so a crash midway
+// leaves one or the other.
+func upgradeV1(path string, old *os.File) (*os.File, error) {
+	defer func() { _ = old.Close() }()
+	buf := make([]byte, Slots*recordSizeV1)
+	if _, err := old.ReadAt(buf, 0); err != nil {
+		return nil, err
+	}
+	out := make([]byte, Slots*RecordSize)
+	for i := 0; i < Slots; i++ {
+		if m, ok := decode(buf[i*recordSizeV1 : (i+1)*recordSizeV1]); ok {
+			copy(out[i*RecordSize:], encode(m))
+		}
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(path, os.O_RDWR, 0o600) //nolint:gosec // fixed path under the state dir
 }
 
 func (r *Ring) write(m Minute) error {
