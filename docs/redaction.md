@@ -26,7 +26,7 @@ Long structures (private keys, JWTs) are handled first, so that later rules cann
 | 6 | `kv_secret` | `password=…`, `secret: …`, `token …`, `api_key=…`, `client_secret=…`, etc.; also covers prefixed names (`MYSQL_ROOT_PASSWORD=`, `spring.datasource.password=`) and JSON keys (`"db_password": "x"`) | Key name kept, value replaced with `[REDACTED:secret]` |
 | 7 | `cli_secret` | `--password=…`, `--token …`, `-pXXXX` (e.g. `mysql -psecret`) | `[REDACTED:secret]` |
 | 8 | `email` | Email addresses | First letter and domain kept: `a***@example.com` (skipped when `sanitize.mask_email: false`) |
-| 9 | `ipv4` | Public IPv4 | Last octet replaced with `x`: `203.0.113.x` |
+| 9 | `ipv4` | Public IPv4, also written with dashes as hostnames do (`vps-203-0-113-45.example.com`) | Last octet replaced with `x`: `203.0.113.x`, `vps-203-0-113-x.example.com`. Inside a DNS name (`static.45.113.0.203.clients.example.net`) the address may be written in reverse, so both ends are replaced: `static.x.113.0.x.clients.example.net` |
 | 10 | `ipv6` | Public IPv6 (2000::/3) | First 3 groups kept: `2400:cb00:1:x::` |
 | 11+ | `custom` | Your own regexes in `sanitize.extra_patterns` | `[REDACTED:custom]` |
 

@@ -26,7 +26,7 @@
 | 6 | `kv_secret` | `password=…`、`secret: …`、`token …`、`api_key=…`、`client_secret=…` 等；也覆盖带前缀的名字（`MYSQL_ROOT_PASSWORD=`、`spring.datasource.password=`）和 JSON 键（`"db_password": "x"`） | 保留键名，值换成 `[REDACTED:secret]` |
 | 7 | `cli_secret` | `--password=…`、`--token …`、`-pXXXX`（如 `mysql -psecret`） | `[REDACTED:secret]` |
 | 8 | `email` | 邮箱地址 | 保留首字母和域名：`a***@example.com`（`sanitize.mask_email: false` 时跳过） |
-| 9 | `ipv4` | 公网 IPv4 | 末段换成 `x`：`203.0.113.x` |
+| 9 | `ipv4` | 公网 IPv4，包括主机名里用短横线写的形式（`vps-203-0-113-45.example.com`） | 末段换成 `x`：`203.0.113.x`、`vps-203-0-113-x.example.com`。在域名中间的（`static.45.113.0.203.clients.example.net`）可能是倒序写的，首尾两段都换掉：`static.x.113.0.x.clients.example.net` |
 | 10 | `ipv6` | 公网 IPv6（2000::/3） | 保留前 3 组：`2400:cb00:1:x::` |
 | 11+ | `custom` | `sanitize.extra_patterns` 中你自己的正则 | `[REDACTED:custom]` |
 
