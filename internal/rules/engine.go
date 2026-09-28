@@ -110,13 +110,15 @@ func (e *Engine) SetRisk(r Risk) { e.sec.setRisk(r) }
 func (e *Engine) SecuritySummary() *proto.SecuritySummary { return e.sec.summary(e.o.Now()) }
 
 // Access reports connections from outside to a port the scan found
-// exposed: db_public_access (P1) or docker_api_access (P0). The caller
-// limits them to one per port per hour.
-func (e *Engine) Access(typ string, port int, service string, connections int, sources []string) []proto.Event {
+// exposed: db_public_access (P1) or docker_api_access (P0). bind is where
+// the port listens (proto.BindAllInterfaces or proto.BindPublicAddress).
+// The caller limits them to one per port per hour.
+func (e *Engine) Access(typ string, port int, service, bind string, connections int, sources []string) []proto.Event {
 	sev := proto.SeverityP1
-	data := map[string]any{"port": port, "connections": connections}
+	data := map[string]any{"port": port, "connections": connections, "bind_scope": bind}
 	if typ == proto.EventDockerAPIAccess {
 		sev = proto.SeverityP0
+		data["tls"] = false // the scan only flags the plain-text API
 	} else {
 		data["service"] = service
 	}

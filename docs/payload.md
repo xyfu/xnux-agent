@@ -34,7 +34,7 @@ TLS ≥ 1.2 with certificate verification (there is no "skip verification" optio
 | `metrics[]` | Resource metrics, in ascending time order |
 | `events[]` | Incident context events |
 | `diag` | Agent self-diagnostics: `rss_mb`, `spool_mb`, `kmsg_lost`, `dropped_metrics`, `collector_errors` |
-| `security_summary` | Once an hour, whatever the [risk scan](risk-scan.md) found: failed SSH logins of the past hour — `start`, `end`, `attempts`, `sources` (distinct addresses, counted only) and `top_users[]` (`user`, `count`, at most 5). No authentication methods, no addresses |
+| `security_summary` | Once an hour, whatever the [risk scan](risk-scan.md) found: failed SSH logins of the past hour — `start`, `end`, `attempts`, `root_attempts` (of them, on the user root), `sources` (distinct addresses in the hour, counted only), `sources_24h` (distinct addresses in the 24 hours up to `end`, counted only) and `top_users[]` (`user`, `count`, at most 5). No authentication methods, no addresses |
 | `redactions` | Hit count for each redaction rule in this payload, e.g. `{"ipv4": 2}` |
 
 ## `host`
@@ -81,7 +81,7 @@ Not collected: IP addresses, MAC addresses, network interface list, user list, i
 | `proc_segfault` | `comm`, `pid`, `module` |
 | `disk_error`, `fs_readonly` | `device`, `message` |
 | `hung_task` | `comm`, `pid`, `blocked_seconds` |
-| `ssh_bruteforce`, `ssh_spray` | Only while the [risk scan](risk-scan.md) finds SSH password login on; one event per server (`key` = the type). `source` (the latest source, redacted network), `fail_count`, `user_count`, `top_users[]`, `window_seconds`, `source_count`; `root_attempts` and severity P1 while root may log in with a password |
+| `ssh_bruteforce`, `ssh_spray` | Only while the [risk scan](risk-scan.md) finds SSH password login on; one event per server (`key` = the type). `source` (the latest source, redacted network), `fail_count`, `user_count`, `top_users[]`, `window_seconds`, `source_count`, `root_password` (whether root may log in with a password); `root_attempts` and severity P1 while it may |
 | `ssh_breach` | `source`, `user`, `method`, `prior_failures` |
 | `ssh_root_password_login` | `source` |
 | `sudo_sensitive` | `by_user`, `as_user`, `command` (redacted), `pwd` |
@@ -91,8 +91,8 @@ Not collected: IP addresses, MAC addresses, network interface list, user list, i
 | `proc_fileless`, `proc_deleted_exe`, `proc_stale_binary`, `proc_tmp_exec` | `pid`, `comm`, `exe`, `cmdline`, `uid`, `ppid_comm` |
 | `proc_reverse_shell` | Same as above, plus `remote` (redacted) |
 | `swap_thrashing`, `mem_pressure` | `in_ps`, `available_mb`, `swap_used_mb` |
-| `db_public_access` | Only while a database port listens on the internet: `port`, `service`, `connections`, `sources[]` (redacted networks); at most one an hour per port |
-| `docker_api_access` | Only while the Docker API is served over TCP without TLS: `port`, `connections`, `sources[]`; at most one an hour per port |
+| `db_public_access` | Only while a database port listens on the internet: `port`, `service`, `bind_scope` (`all_interfaces` or `public_address`; never the address), `connections`, `sources[]` (redacted networks); at most one an hour per port |
+| `docker_api_access` | Only while the Docker API is served over TCP without TLS: `port`, `tls` (always `false`), `bind_scope`, `connections`, `sources[]`; at most one an hour per port |
 
 ## Example
 

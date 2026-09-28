@@ -58,7 +58,7 @@ func (a *agent) checkAccess(now time.Time) {
 		a.monitor = &riskscan.Monitor{Root: filepath.Clean(a.o.Root)}
 	}
 	for _, ac := range a.monitor.Check(r, now) {
-		a.events(a.engine.Access(ac.Type, ac.Port, ac.Service, ac.Connections, ac.Sources))
+		a.events(a.engine.Access(ac.Type, ac.Port, ac.Service, ac.BindScope, ac.Connections, ac.Sources))
 	}
 }
 

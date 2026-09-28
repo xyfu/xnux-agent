@@ -84,12 +84,16 @@ type security struct {
 	brute   *burst
 	spray   *burst
 	hour    hourly
+	// seen24h is when each source address last failed, for the summary's
+	// 24-hour distinct count; the addresses never leave the agent.
+	seen24h map[string]time.Time
 }
 
 // hourly is the security summary being counted (spec v1.1 delta 10.4).
 type hourly struct {
 	start    time.Time
 	attempts int
+	root     int
 	sources  map[string]struct{}
 	users    map[string]int
 }
@@ -98,11 +102,12 @@ type hourly struct {
 const (
 	maxHourSources = 10_000
 	maxHourUsers   = 1000
+	max24hSources  = 50_000
 )
 
 func newSecurity(cfg config.Security, newID func() string) (*security, error) {
 	s := &security{cfg: cfg, newID: newID, lru: list.New(), byAddr: map[string]*list.Element{},
-		sudoBad: map[string][]time.Time{}}
+		sudoBad: map[string][]time.Time{}, seen24h: map[string]time.Time{}}
 	for _, p := range append(append([]string(nil), sudoSensitive...), cfg.SudoSensitiveExtra...) {
 		re, err := regexp.Compile(p)
 		if err != nil {
@@ -348,6 +353,7 @@ func (s *security) burstData(typ string, t, since time.Time) map[string]any {
 	if latest != nil {
 		d["source"] = latest.addr
 	}
+	d["root_password"] = s.risk.RootPassword
 	if s.risk.RootPassword {
 		d["root_attempts"] = root
 	}
@@ -381,6 +387,12 @@ func (s *security) count(addr, user string, n int, t time.Time) {
 		h.sources, h.users = map[string]struct{}{}, map[string]int{}
 	}
 	h.attempts += n
+	if user == "root" {
+		h.root += n
+	}
+	if _, ok := s.seen24h[addr]; ok || len(s.seen24h) < max24hSources {
+		s.seen24h[addr] = t
+	}
 	if len(h.sources) < maxHourSources {
 		h.sources[addr] = struct{}{}
 	}
@@ -404,12 +416,29 @@ func (s *security) summary(now time.Time) *proto.SecuritySummary {
 	if now.Before(end) {
 		return nil
 	}
-	sum := &proto.SecuritySummary{Start: h.start.Unix(), End: end.Unix(), Attempts: h.attempts, Sources: len(h.sources)}
+	sum := &proto.SecuritySummary{Start: h.start.Unix(), End: end.Unix(), Attempts: h.attempts,
+		RootAttempts: min(h.root, h.attempts), Sources: len(h.sources), Sources24h: s.sources24h(end)}
 	for _, name := range topN(h.users, proto.MaxTopUsers) {
 		sum.TopUsers = append(sum.TopUsers, proto.UserCount{User: name, Count: h.users[name]})
 	}
 	*h = hourly{start: now.Truncate(time.Hour), sources: map[string]struct{}{}, users: map[string]int{}}
 	return sum
+}
+
+// sources24h drops addresses last seen more than 24 hours before end and
+// counts the rest.
+func (s *security) sources24h(end time.Time) int {
+	from := end.Add(-24 * time.Hour)
+	n := 0
+	for addr, t := range s.seen24h {
+		switch {
+		case t.Before(from):
+			delete(s.seen24h, addr)
+		case t.Before(end):
+			n++
+		}
+	}
+	return n
 }
 
 func (s *security) accept(addr, user, method string, t time.Time) []occ {

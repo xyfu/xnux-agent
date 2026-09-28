@@ -160,3 +160,14 @@ func TestDocsListWhatIsRead(t *testing.T) {
 		}
 	}
 }
+
+func TestBindScope(t *testing.T) {
+	for addr, want := range map[string]string{
+		"0.0.0.0": proto.BindAllInterfaces, "::": proto.BindAllInterfaces,
+		"203.0.113.7": proto.BindPublicAddress, "10.0.0.5": proto.BindPublicAddress, "docker.example": proto.BindPublicAddress,
+	} {
+		if got := (Exposure{Addr: addr}).BindScope(); got != want {
+			t.Errorf("%s: %s, want %s", addr, got, want)
+		}
+	}
+}

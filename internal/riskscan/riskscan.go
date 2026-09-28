@@ -12,10 +12,13 @@ package riskscan
 
 import (
 	"context"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/xyfu/xnux-shared/proto"
 )
 
 // Check names, as "xnux status" shows them and docs/risk-scan.md lists them
@@ -58,6 +61,15 @@ type Exposure struct {
 	Port    int    `json:"port"`
 	Service string `json:"service"`
 	Addr    string `json:"addr"` // the bound address
+}
+
+// BindScope tells whether the port listens on every interface or on one
+// address (spec v1.1 delta 10.7); events carry it instead of the address.
+func (e Exposure) BindScope() string {
+	if a, err := netip.ParseAddr(e.Addr); err == nil && a.IsUnspecified() {
+		return proto.BindAllInterfaces
+	}
+	return proto.BindPublicAddress
 }
 
 // SSH is the result of the SSH checks.

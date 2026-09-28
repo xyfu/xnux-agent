@@ -20,6 +20,7 @@ type Access struct {
 	Type        string // proto.EventDBPublicAccess or proto.EventDockerAPIAccess
 	Port        int
 	Service     string
+	BindScope   string // proto.BindAllInterfaces or proto.BindPublicAddress
 	Connections int
 	Sources     []string // networks with the host part hidden
 }
@@ -84,7 +85,7 @@ func (m *Monitor) collect(out []Access, typ string, e Exposure, socks []Socket, 
 		srcs = append(srcs, s)
 	}
 	sort.Strings(srcs)
-	return append(out, Access{Type: typ, Port: e.Port, Service: e.Service, Connections: n, Sources: srcs})
+	return append(out, Access{Type: typ, Port: e.Port, Service: e.Service, BindScope: e.BindScope(), Connections: n, Sources: srcs})
 }
 
 func itoa(n int) string {

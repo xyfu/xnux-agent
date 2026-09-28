@@ -273,7 +273,7 @@ func TestAttacksFollowTheRiskScan(t *testing.T) {
 	if len(evs) != 1 || evs[0].Type != proto.EventSSHBruteforce || evs[0].Severity != "P2" {
 		t.Fatalf("after turning on: %+v", evs)
 	}
-	if _, ok := evs[0].Data["root_attempts"]; ok {
+	if _, ok := evs[0].Data["root_attempts"]; ok || evs[0].Data["root_password"] != false {
 		t.Fatal("root attempts counted while root cannot use a password")
 	}
 }
@@ -285,7 +285,7 @@ func TestBruteForceMergedPerServer(t *testing.T) {
 	e := newEngine(t, c)
 	e.SetRisk(rules.Risk{Scan: true, SSHPassword: true, RootPassword: true})
 	first := fails(e, c, "8.8.4.4", "root", 20)
-	if len(first) != 1 || first[0].Severity != "P1" || first[0].Data["root_attempts"] != 20 {
+	if len(first) != 1 || first[0].Severity != "P1" || first[0].Data["root_attempts"] != 20 || first[0].Data["root_password"] != true {
 		t.Fatalf("first: %+v", first)
 	}
 	c.t = c.t.Add(time.Minute)
@@ -322,26 +322,37 @@ func TestSecuritySummary(t *testing.T) {
 	}
 	c.t = time.Date(2026, 9, 28, 11, 0, 5, 0, time.UTC)
 	s := e.SecuritySummary()
-	if s == nil || s.Attempts != 37 || s.Sources != 2 || len(s.TopUsers) != 2 || s.TopUsers[0] != (proto.UserCount{User: "root", Count: 32}) ||
+	if s == nil || s.Attempts != 37 || s.RootAttempts != 32 || s.Sources != 2 || s.Sources24h != 2 || len(s.TopUsers) != 2 || s.TopUsers[0] != (proto.UserCount{User: "root", Count: 32}) ||
 		s.Start != time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC).Unix() || s.End != time.Date(2026, 9, 28, 11, 0, 0, 0, time.UTC).Unix() {
 		t.Fatalf("summary: %+v", s)
 	}
 	// A quiet hour still yields a summary, with zero attempts.
 	c.t = c.t.Add(time.Hour)
-	if s := e.SecuritySummary(); s == nil || s.Attempts != 0 || s.Sources != 0 {
+	if s := e.SecuritySummary(); s == nil || s.Attempts != 0 || s.Sources != 0 || s.Sources24h != 2 {
 		t.Fatalf("quiet hour: %+v", s)
+	}
+	// The 24-hour count keeps a source for a day, then drops it.
+	c.t = time.Date(2026, 9, 29, 10, 30, 0, 0, time.UTC)
+	fails(e, c, "1.1.1.1", "ubuntu", 1)
+	e.SecuritySummary() // the hour started 12:00 on the 28th: sources of the 28th still count
+	c.t = time.Date(2026, 9, 29, 11, 0, 5, 0, time.UTC)
+	if s := e.SecuritySummary(); s == nil || s.Sources24h != 1 || s.RootAttempts != 0 {
+		t.Fatalf("next day: %+v", s)
 	}
 }
 
 func TestAccessEvents(t *testing.T) {
 	c := &clock{t: time.Unix(1_790_000_000, 0)}
 	e := newEngine(t, c)
-	db := e.Access(proto.EventDBPublicAccess, 6379, "redis", 3, []string{"203.0.113.x"})
-	dk := e.Access(proto.EventDockerAPIAccess, 2375, "docker", 1, nil)
+	db := e.Access(proto.EventDBPublicAccess, 6379, "redis", proto.BindAllInterfaces, 3, []string{"203.0.113.x"})
+	dk := e.Access(proto.EventDockerAPIAccess, 2375, "docker", proto.BindPublicAddress, 1, nil)
 	if len(db) != 1 || db[0].Severity != "P1" || db[0].Key != "db_public_access:6379" || db[0].Data["service"] != "redis" {
 		t.Fatalf("db: %+v", db)
 	}
-	if len(dk) != 1 || dk[0].Severity != "P0" || dk[0].Data["port"] != 2375 {
+	if db[0].Data["bind_scope"] != proto.BindAllInterfaces {
+		t.Fatalf("db bind_scope: %+v", db[0].Data)
+	}
+	if len(dk) != 1 || dk[0].Severity != "P0" || dk[0].Data["port"] != 2375 || dk[0].Data["tls"] != false || dk[0].Data["bind_scope"] != proto.BindPublicAddress {
 		t.Fatalf("docker: %+v", dk)
 	}
 	p := proto.Payload{V: 1, Seq: 1, SentAt: c.t.Unix(), AgentVersion: "test", MachineFP: "0123456789abcdef",
