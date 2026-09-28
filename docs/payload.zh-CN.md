@@ -34,6 +34,7 @@ TLS ≥ 1.2 且校验证书（没有“跳过校验”选项，私有 CA 用 `tl
 | `metrics[]` | 资源指标，按时间升序 |
 | `events[]` | 现场事件 |
 | `diag` | 探针自诊断：`rss_mb`、`spool_mb`、`kmsg_lost`、`dropped_metrics`、`collector_errors` |
+| `security_summary` | 每小时一次，无论[风险扫描](risk-scan.zh-CN.md)结果如何：过去一小时 SSH 登录失败的汇总——`start`、`end`、`attempts`、`sources`（只计来源个数）与 `top_users[]`（`user`、`count`，最多 5 个）。不含认证方式和地址 |
 | `redactions` | 本条载荷里各脱敏规则的命中次数，如 `{"ipv4": 2}` |
 
 ## `host`
@@ -80,7 +81,7 @@ TLS ≥ 1.2 且校验证书（没有“跳过校验”选项，私有 CA 用 `tl
 | `proc_segfault` | `comm`、`pid`、`module` |
 | `disk_error`、`fs_readonly` | `device`、`message` |
 | `hung_task` | `comm`、`pid`、`blocked_seconds` |
-| `ssh_bruteforce`、`ssh_spray` | `source`（已脱敏网段）、`fail_count`、`user_count`、`top_users[]`、`window_seconds` |
+| `ssh_bruteforce`、`ssh_spray` | 仅当[风险扫描](risk-scan.zh-CN.md)发现 SSH 允许密码登录时上报；按服务器合并为一条（`key` 为类型）。`source`（最近的来源，已脱敏网段）、`fail_count`、`user_count`、`top_users[]`、`window_seconds`、`source_count`；root 允许密码登录时为 P1 并带 `root_attempts` |
 | `ssh_breach` | `source`、`user`、`method`、`prior_failures` |
 | `ssh_root_password_login` | `source` |
 | `sudo_sensitive` | `by_user`、`as_user`、`command`（已脱敏）、`pwd` |
@@ -90,6 +91,8 @@ TLS ≥ 1.2 且校验证书（没有“跳过校验”选项，私有 CA 用 `tl
 | `proc_fileless`、`proc_deleted_exe`、`proc_stale_binary`、`proc_tmp_exec` | `pid`、`comm`、`exe`、`cmdline`、`uid`、`ppid_comm` |
 | `proc_reverse_shell` | 同上，加 `remote`（已脱敏） |
 | `swap_thrashing`、`mem_pressure` | `in_ps`、`available_mb`、`swap_used_mb` |
+| `db_public_access` | 仅当数据库端口监听在公网时：`port`、`service`、`connections`、`sources[]`（已脱敏网段）；每端口每小时最多 1 条 |
+| `docker_api_access` | 仅当 Docker API 以未加 TLS 的 TCP 对外时：`port`、`connections`、`sources[]`；每端口每小时最多 1 条 |
 
 ## 示例
 

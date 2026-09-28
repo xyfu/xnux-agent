@@ -71,7 +71,7 @@ auth.log/journal ┼─► 规则引擎（清洗 → 安全状态机 → 防抖�
 - 同指纹（类型 + 主键）60 秒内重复只累加 `count`，窗口结束发一次更新（同一事件 id）；仍在重复则继续合并。P0 不防抖。爆破 / 喷洒触发后进入 10 分钟静默期，期间只计数，结束时若仍在持续发一次更新。
 - P0 / P1、`oom_kill`、`service_failed`、`mem_pressure` 首次出现时附现场快照：最近 10 分钟指标（每采样间隔一点）、按 RSS 与 CPU（间隔 500 ms 两次读取）的前 5 个进程（命令行经清洗与脱敏、所属 systemd unit）。快照最多 2 秒，失败不影响事件发送。
 - 事件到达后等 1 秒收集同批事件再发送（连同待发指标）；P0 立即发送。
-- 外部命令只有两处：事件发生时的 `journalctl -u <unit> -n 50`（3 秒超时），以及无 auth.log / secure 时常驻的 `journalctl -f -o json`。
+- 外部命令只有三处：事件发生时的 `journalctl -u <unit> -n 50`（3 秒超时），无 auth.log / secure 时常驻的 `journalctl -f -o json`，以及每次[风险扫描](risk-scan.zh-CN.md)调用一次的 `sshd -T`（3 秒超时）。
 - 安全日志文件模式：监听目录的创建 / 改名 / 删除和文件本身的修改；logrotate 改名后继续读旧文件，直到写入方开始写新文件；copytruncate 时从头重读；位置（设备、inode、完整行末尾偏移）每 10 秒及退出时写入 state.json，重启后续读，文件已轮转时先读完 `path.1` 的余量。
 
 ### 事件级别

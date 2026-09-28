@@ -49,17 +49,29 @@ type source struct {
 	fails []time.Time // oldest first, at most maxFails
 	users map[string]*userSeen
 	last  time.Time
-	brute *burst
-	spray *burst
+	// Whether this source crossed the brute-force or spray threshold; it
+	// then feeds the server's burst of that type.
+	brute, spray bool
 }
 
-// burst is an ongoing brute-force or spray event: after it fires, further
-// attempts only count until the silence ends (spec A4.2).
+// burst is an ongoing brute-force or spray event for the whole server
+// (fingerprint = server + type, spec v1.1 delta 10.4): after it fires,
+// further attempts only count until the silence ends (spec A4.2).
 type burst struct {
 	ev    proto.Event
 	until time.Time
 	more  int
 }
+
+// Risk is what the local risk scan found (spec v1.1 delta 10.4). Brute
+// force and spray are reported only while sshd accepts passwords.
+type Risk struct {
+	Scan         bool // the scan runs (collectors.riskscan)
+	SSHPassword  bool
+	RootPassword bool
+}
+
+func (r Risk) reportAttacks() bool { return r.Scan && r.SSHPassword }
 
 type security struct {
 	cfg     config.Security
@@ -67,13 +79,30 @@ type security struct {
 	newID   func() string
 	lru     *list.List // front = most recently active; values are *source
 	byAddr  map[string]*list.Element
-	bursts  map[string]*source // sources with an active burst
 	sudoBad map[string][]time.Time
+	risk    Risk
+	brute   *burst
+	spray   *burst
+	hour    hourly
 }
+
+// hourly is the security summary being counted (spec v1.1 delta 10.4).
+type hourly struct {
+	start    time.Time
+	attempts int
+	sources  map[string]struct{}
+	users    map[string]int
+}
+
+// Bounds of the hourly summary's tables.
+const (
+	maxHourSources = 10_000
+	maxHourUsers   = 1000
+)
 
 func newSecurity(cfg config.Security, newID func() string) (*security, error) {
 	s := &security{cfg: cfg, newID: newID, lru: list.New(), byAddr: map[string]*list.Element{},
-		bursts: map[string]*source{}, sudoBad: map[string][]time.Time{}}
+		sudoBad: map[string][]time.Time{}}
 	for _, p := range append(append([]string(nil), sudoSensitive...), cfg.SudoSensitiveExtra...) {
 		re, err := regexp.Compile(p)
 		if err != nil {
@@ -155,7 +184,7 @@ func (s *security) get(addr string, now time.Time) *source {
 func (s *security) expire(now time.Time) {
 	for el := s.lru.Back(); el != nil; el = s.lru.Back() {
 		src := el.Value.(*source)
-		if now.Sub(src.last) < idleExpiry || src.brute != nil || src.spray != nil {
+		if now.Sub(src.last) < idleExpiry {
 			return
 		}
 		s.drop(el)
@@ -166,7 +195,6 @@ func (s *security) drop(el *list.Element) {
 	src := el.Value.(*source)
 	s.lru.Remove(el)
 	delete(s.byAddr, src.addr)
-	delete(s.bursts, src.addr)
 }
 
 func countSince(ts []time.Time, since time.Time) int {
@@ -184,16 +212,15 @@ func (src *source) usersSince(since time.Time) int {
 	return n
 }
 
-func (src *source) topUsers(since time.Time) []string {
+// topN returns the n most tried names, most tried first.
+func topN(counts map[string]int, n int) []string {
 	type kv struct {
 		name string
 		n    int
 	}
-	var all []kv
-	for name, u := range src.users {
-		if !u.last.Before(since) {
-			all = append(all, kv{name, u.n})
-		}
+	all := make([]kv, 0, len(counts))
+	for name, c := range counts {
+		all = append(all, kv{name, c})
 	}
 	sort.Slice(all, func(i, j int) bool {
 		if all[i].n != all[j].n {
@@ -202,7 +229,7 @@ func (src *source) topUsers(since time.Time) []string {
 		return all[i].name < all[j].name
 	})
 	out := []string{}
-	for i := 0; i < len(all) && i < 5; i++ {
+	for i := 0; i < len(all) && i < n; i++ {
 		out = append(out, all[i].name)
 	}
 	return out
@@ -212,6 +239,7 @@ func (s *security) fail(addr, user string, n int, t time.Time) []occ {
 	if addr == "" {
 		return nil
 	}
+	s.count(addr, user, n, t)
 	src := s.get(addr, t)
 	src.last = t
 	for range n {
@@ -228,40 +256,160 @@ func (s *security) fail(addr, user string, n int, t time.Time) []occ {
 		}
 	}
 
+	// Failures are always tracked (ssh_breach needs them); brute force and
+	// spray are reported only while the scan finds password login on.
 	var out []occ
-	if src.brute != nil {
-		src.brute.more += n
+	if src.brute {
+		if s.brute != nil {
+			s.brute.more += n
+		}
 	} else if countSince(src.fails, t.Add(-bruteWindow)) >= s.cfg.BruteforceFailThreshold {
-		src.brute = s.burst(src, proto.EventSSHBruteforce, bruteWindow, t)
-		out = append(out, occ{ev: &src.brute.ev})
+		src.brute = true
+		out = append(out, s.trigger(&s.brute, proto.EventSSHBruteforce, t)...)
 	}
-	if src.spray != nil {
-		src.spray.more += max(n, 1)
+	if src.spray {
+		if s.spray != nil {
+			s.spray.more += max(n, 1)
+		}
 	} else if src.usersSince(t.Add(-sprayWindow)) >= s.cfg.SprayUserThreshold {
-		src.spray = s.burst(src, proto.EventSSHSpray, sprayWindow, t)
-		out = append(out, occ{ev: &src.spray.ev})
+		src.spray = true
+		out = append(out, s.trigger(&s.spray, proto.EventSSHSpray, t)...)
 	}
 	return out
 }
 
-func (s *security) burst(src *source, typ string, window time.Duration, t time.Time) *burst {
-	s.bursts[src.addr] = src
-	return &burst{
-		ev: proto.Event{ID: s.newID(), TS: t.Unix(), Type: typ, Severity: proto.SeverityP2, Count: 1,
-			Key: src.addr, Data: burstData(src, window, t)},
+// trigger adds a source to the server's burst of typ, starting the burst
+// (and its event) when there is none.
+func (s *security) trigger(pb **burst, typ string, t time.Time) []occ {
+	if !s.risk.reportAttacks() {
+		return nil
+	}
+	if *pb != nil {
+		(*pb).more++
+		return nil
+	}
+	*pb = &burst{
+		ev: proto.Event{ID: s.newID(), TS: t.Unix(), Type: typ, Severity: s.attackSeverity(), Count: 1,
+			Key: typ, Data: s.burstData(typ, t, t.Add(-window(typ)))},
 		until: t.Add(burstSilence),
+	}
+	return []occ{{ev: &(*pb).ev}}
+}
+
+// attackSeverity is P2, or P1 while root may log in with a password.
+func (s *security) attackSeverity() string {
+	if s.risk.RootPassword {
+		return proto.SeverityP1
+	}
+	return proto.SeverityP2
+}
+
+func window(typ string) time.Duration {
+	if typ == proto.EventSSHSpray {
+		return sprayWindow
+	}
+	return bruteWindow
+}
+
+// burstData sums the sources that crossed typ's threshold and were active
+// since the given time (the rule's window for the first report, the
+// previous report for an update): the latest of them is "source".
+func (s *security) burstData(typ string, t, since time.Time) map[string]any {
+	var latest *source
+	fails, sources, root := 0, 0, 0
+	users := map[string]int{}
+	for el := s.lru.Front(); el != nil; el = el.Next() {
+		src := el.Value.(*source)
+		if (typ == proto.EventSSHSpray && !src.spray) || (typ == proto.EventSSHBruteforce && !src.brute) || src.last.Before(since) {
+			continue
+		}
+		if latest == nil {
+			latest = src // the list is most recently active first
+		}
+		sources++
+		fails += countSince(src.fails, since)
+		for name, u := range src.users {
+			if !u.last.Before(since) && (len(users) < maxHourUsers || users[name] > 0) {
+				users[name] += u.n
+			}
+		}
+		if u, ok := src.users["root"]; ok && !u.last.Before(since) {
+			root += u.n
+		}
+	}
+	d := map[string]any{
+		"source":         "",
+		"fail_count":     fails,
+		"user_count":     len(users),
+		"top_users":      topN(users, 5),
+		"window_seconds": max(int(t.Sub(since).Seconds()), 1),
+		"source_count":   sources,
+	}
+	if latest != nil {
+		d["source"] = latest.addr
+	}
+	if s.risk.RootPassword {
+		d["root_attempts"] = root
+	}
+	return d
+}
+
+// setRisk applies a new scan result. When attacks stop being reportable the
+// bursts end silently (no "fixed" notice, spec v1.1 delta 10.4); sources
+// start over, so an attack still going on is reported afresh when they
+// become reportable again.
+func (s *security) setRisk(r Risk) {
+	if r == s.risk {
+		return
+	}
+	was := s.risk.reportAttacks()
+	s.risk = r
+	if was != r.reportAttacks() {
+		s.brute, s.spray = nil, nil
+		for el := s.lru.Front(); el != nil; el = el.Next() {
+			src := el.Value.(*source)
+			src.brute, src.spray = false, false
+		}
 	}
 }
 
-func burstData(src *source, window time.Duration, t time.Time) map[string]any {
-	since := t.Add(-window)
-	return map[string]any{
-		"source":         src.addr,
-		"fail_count":     countSince(src.fails, since),
-		"user_count":     src.usersSince(since),
-		"top_users":      src.topUsers(since),
-		"window_seconds": int(window.Seconds()),
+// count feeds the hourly summary, whatever the scan found.
+func (s *security) count(addr, user string, n int, t time.Time) {
+	h := &s.hour
+	if h.sources == nil {
+		h.start = t.Truncate(time.Hour)
+		h.sources, h.users = map[string]struct{}{}, map[string]int{}
 	}
+	h.attempts += n
+	if len(h.sources) < maxHourSources {
+		h.sources[addr] = struct{}{}
+	}
+	if user != "" {
+		if _, ok := h.users[user]; ok || len(h.users) < maxHourUsers {
+			h.users[user] += max(n, 1)
+		}
+	}
+}
+
+// summary returns the finished hour's summary once the hour is over, and
+// starts the next one; nothing before the first hour ends.
+func (s *security) summary(now time.Time) *proto.SecuritySummary {
+	h := &s.hour
+	if h.sources == nil {
+		h.start = now.Truncate(time.Hour)
+		h.sources, h.users = map[string]struct{}{}, map[string]int{}
+		return nil
+	}
+	end := h.start.Add(time.Hour)
+	if now.Before(end) {
+		return nil
+	}
+	sum := &proto.SecuritySummary{Start: h.start.Unix(), End: end.Unix(), Attempts: h.attempts, Sources: len(h.sources)}
+	for _, name := range topN(h.users, proto.MaxTopUsers) {
+		sum.TopUsers = append(sum.TopUsers, proto.UserCount{User: name, Count: h.users[name]})
+	}
+	*h = hourly{start: now.Truncate(time.Hour), sources: map[string]struct{}{}, users: map[string]int{}}
+	return sum
 }
 
 func (s *security) accept(addr, user, method string, t time.Time) []occ {
@@ -308,41 +456,31 @@ func (s *security) sudoFail(user string, n int, t time.Time) []occ {
 // the same id and a higher count, then stays silenced; a quiet one ends.
 func (s *security) due(now time.Time) []occ {
 	var out []occ
-	for addr, src := range s.bursts {
-		for _, pb := range []**burst{&src.brute, &src.spray} {
-			b := *pb
-			if b == nil || now.Before(b.until) {
-				continue
-			}
-			if b.more == 0 {
-				*pb = nil
-				continue
-			}
-			window := bruteWindow
-			if b.ev.Type == proto.EventSSHSpray {
-				window = sprayWindow
-			}
-			b.ev.Count++
-			b.ev.LastTS = now.Unix()
-			b.ev.Data = burstData(src, window, now)
-			b.more = 0
-			b.until = now.Add(burstSilence)
-			ev := b.ev
-			out = append(out, occ{ev: &ev})
+	for _, pb := range []**burst{&s.brute, &s.spray} {
+		b := *pb
+		if b == nil || now.Before(b.until) {
+			continue
 		}
-		if src.brute == nil && src.spray == nil {
-			delete(s.bursts, addr)
+		if b.more == 0 {
+			*pb = nil
+			continue
 		}
+		b.ev.Count++
+		b.ev.LastTS = now.Unix()
+		b.ev.Severity = s.attackSeverity()
+		b.ev.Data = s.burstData(b.ev.Type, now, b.until.Add(-burstSilence))
+		b.more = 0
+		b.until = now.Add(burstSilence)
+		ev := b.ev
+		out = append(out, occ{ev: &ev})
 	}
 	return out
 }
 
 func (s *security) nextDue() (t time.Time, ok bool) {
-	for _, src := range s.bursts {
-		for _, b := range []*burst{src.brute, src.spray} {
-			if b != nil && (!ok || b.until.Before(t)) {
-				t, ok = b.until, true
-			}
+	for _, b := range []*burst{s.brute, s.spray} {
+		if b != nil && (!ok || b.until.Before(t)) {
+			t, ok = b.until, true
 		}
 	}
 	return t, ok

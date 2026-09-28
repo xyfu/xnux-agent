@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"regexp"
 	"sort"
@@ -48,6 +49,85 @@ type statusData struct {
 	Storage         map[string]any     `json:"storage"`
 	Health          localhealth.Result `json:"health"`
 	RSSMB           float64            `json:"rss_mb"`
+	Riskscan        *riskStatus        `json:"riskscan,omitempty"`
+}
+
+// riskStatus is the local risk scan (spec v1.1 delta 10): read only, never
+// uploaded.
+type riskStatus struct {
+	Enabled bool  `json:"enabled"`
+	At      int64 `json:"at"`
+	FullAt  int64 `json:"full_at"`
+	Checks  []struct {
+		Name   string          `json:"name"`
+		Found  bool            `json:"found"`
+		Detail json.RawMessage `json:"detail"`
+	} `json:"checks"`
+	Reporting []string `json:"reporting"`
+}
+
+var checkLabels = map[string]string{
+	"ssh_password":  "SSH password login",
+	"root_password": "root password login",
+	"db_public":     "database open to the internet",
+	"docker_api":    "Docker API exposed over TCP",
+}
+
+func printRisk(w io.Writer, r *riskStatus, c palette) {
+	if r == nil {
+		return
+	}
+	reporting := strings.ReplaceAll(strings.Join(r.Reporting, ", "), "security_summary", "hourly attack summary")
+	if !r.Enabled {
+		fmt.Fprintf(w, "risk scan  off (collectors.riskscan: false)\n           reporting %s\n", reporting)
+		return
+	}
+	if r.At == 0 {
+		fmt.Fprintln(w, "risk scan  starting")
+		return
+	}
+	fmt.Fprintf(w, "risk scan  last %s, all checks %s (results stay on this machine)\n",
+		time.Unix(r.At, 0).Format("2006-01-02 15:04:05"), time.Unix(r.FullAt, 0).Format("15:04:05"))
+	for _, ch := range r.Checks {
+		state, color := "no", c.green
+		if ch.Found {
+			state, color = "yes", c.yellow
+		}
+		detail := ""
+		var ssh struct {
+			Present bool   `json:"present"`
+			Source  string `json:"source"`
+			Error   string `json:"error"`
+		}
+		var exp []struct {
+			Port    int    `json:"port"`
+			Service string `json:"service"`
+			Addr    string `json:"addr"`
+		}
+		switch {
+		case strings.HasPrefix(string(ch.Detail), "{") && json.Unmarshal(ch.Detail, &ssh) == nil:
+			switch {
+			case ssh.Error != "":
+				state, color, detail = "unknown", c.yellow, ssh.Error
+			case !ssh.Present:
+				detail = "no SSH server"
+			default:
+				detail = "from " + ssh.Source
+			}
+		case json.Unmarshal(ch.Detail, &exp) == nil:
+			var parts []string
+			for _, e := range exp {
+				parts = append(parts, fmt.Sprintf("%s on %s", e.Service, net.JoinHostPort(e.Addr, strconv.Itoa(e.Port))))
+			}
+			detail = strings.Join(parts, ", ")
+		}
+		label := checkLabels[ch.Name]
+		if label == "" {
+			label = ch.Name
+		}
+		fmt.Fprintf(w, "           %-30s %s%-7s%s %s\n", label, color, state, c.reset, detail)
+	}
+	fmt.Fprintf(w, "           reporting %s\n", reporting)
 }
 
 // ---- top ----
@@ -496,6 +576,7 @@ func status(args []string, env Env) error {
 	} else {
 		fmt.Fprintln(w, "health     collecting (scored after an hour of data)")
 	}
+	printRisk(w, d.Riskscan, c)
 	return nil
 }
 

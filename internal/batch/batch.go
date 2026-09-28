@@ -33,6 +33,7 @@ type Batcher struct {
 	metrics []proto.Metric
 	events  []proto.Event
 	host    *proto.Host
+	summary *proto.SecuritySummary
 }
 
 func New(o Options) *Batcher {
@@ -60,9 +61,12 @@ func (b *Batcher) AddEvent(e proto.Event) { b.events = append(b.events, e) }
 // SetHost attaches host info to the next payload.
 func (b *Batcher) SetHost(h proto.Host) { b.host = &h }
 
+// SetSecuritySummary attaches the hourly security summary to the next payload.
+func (b *Batcher) SetSecuritySummary(s *proto.SecuritySummary) { b.summary = s }
+
 // Pending reports whether anything is waiting to be flushed.
 func (b *Batcher) Pending() bool {
-	return len(b.metrics) > 0 || len(b.events) > 0 || b.host != nil
+	return len(b.metrics) > 0 || len(b.events) > 0 || b.host != nil || b.summary != nil
 }
 
 // Flush builds, seals and returns the pending payload, split into parts if
@@ -82,11 +86,13 @@ func (b *Batcher) Flush(heartbeat bool) ([]sanitize.SanitizedPayload, error) {
 		Metrics:      b.metrics,
 		Events:       b.events,
 		Redactions:   map[string]int{},
+
+		SecuritySummary: b.summary,
 	}
 	if b.o.Diag != nil {
 		p.Diag = b.o.Diag()
 	}
-	b.metrics, b.events, b.host = nil, nil, nil
+	b.metrics, b.events, b.host, b.summary = nil, nil, nil, nil
 
 	sp, err := b.o.Barrier.Seal(p)
 	if err != nil {

@@ -106,9 +106,19 @@ func Score(minutes []localstore.Minute, latest *proto.Metric, events []localstor
 		if e.Type == "ssh_root_password_login" {
 			in.RootPasswordLogin = true
 		}
-		if has(intrusion, e.Type) {
+		switch {
+		case has(intrusion, e.Type):
 			in.OpenP0Intrusion++
-		} else if has(security, e.Type) {
+		case e.Type == "ssh_bruteforce" || e.Type == "ssh_spray":
+			// Once per server (health/v2): P1 while root may use a password.
+			if strings.EqualFold(e.Severity, "P1") {
+				in.OpenSSHAttack = 1
+			} else if in.OpenSSHAttack == 0 {
+				in.OpenSSHAttack = 2
+			}
+		case e.Type == "db_public_access":
+			in.OpenDBPublic++
+		case has(security, e.Type):
 			switch strings.ToUpper(e.Severity) {
 			case "P1":
 				in.OpenP1Security++

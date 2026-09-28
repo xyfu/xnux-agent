@@ -49,7 +49,7 @@ The script installs only after checking sha256 sums; see [docs/install.md](docs/
 | 2. What it just sent | `xnux payload --last` (i.e. `/var/log/xnux/last_outgoing_payload.json`); compare it and its sha256 with the original shown on the console's transparency audit page |
 | 3. That the binary is built from this source | `git checkout vX.Y.Z && make agent VERSION=vX.Y.Z COMMIT=$(git rev-parse --short HEAD) && sha256sum bin/xnux-agent-linux-*`, and compare with the release's `SHA256SUMS`; files are also cosign-signed |
 
-The agent makes exactly one kind of outbound request (`POST /v1/ingest`, and not even that in standalone mode). It listens on no network port (the CLI talks to it over a local Unix socket), accepts no remote commands and never updates itself. Fields: [docs/payload.md](docs/payload.md); redaction: [docs/redaction.md](docs/redaction.md); running without root: [docs/least-privilege.md](docs/least-privilege.md); hiding the origin IP: [docs/relay.md](docs/relay.md).
+The agent makes exactly one kind of outbound request (`POST /v1/ingest`, and not even that in standalone mode). It listens on no network port (the CLI talks to it over a local Unix socket), accepts no remote commands and never updates itself. Fields: [docs/payload.md](docs/payload.md); redaction: [docs/redaction.md](docs/redaction.md); what the local risk scan reads and why: [docs/risk-scan.md](docs/risk-scan.md); running without root: [docs/least-privilege.md](docs/least-privilege.md); hiding the origin IP: [docs/relay.md](docs/relay.md).
 
 ## Development
 

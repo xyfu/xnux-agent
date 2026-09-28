@@ -5,6 +5,7 @@
 package rules
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -99,6 +100,31 @@ func (e *Engine) Record(r raw.Record) []proto.Event {
 		return nil // unknown kind: a watcher bug, never reported half-formed
 	}
 	return e.emit([]occ{{typ: r.Kind, sev: sev, key: r.Key, ts: r.TS, data: r.Data}}, now)
+}
+
+// SetRisk applies the local risk scan's result (spec v1.1 delta 10.4).
+func (e *Engine) SetRisk(r Risk) { e.sec.setRisk(r) }
+
+// SecuritySummary returns the hourly SSH attack summary once an hour has
+// ended, whatever the scan found.
+func (e *Engine) SecuritySummary() *proto.SecuritySummary { return e.sec.summary(e.o.Now()) }
+
+// Access reports connections from outside to a port the scan found
+// exposed: db_public_access (P1) or docker_api_access (P0). The caller
+// limits them to one per port per hour.
+func (e *Engine) Access(typ string, port int, service string, connections int, sources []string) []proto.Event {
+	sev := proto.SeverityP1
+	data := map[string]any{"port": port, "connections": connections}
+	if typ == proto.EventDockerAPIAccess {
+		sev = proto.SeverityP0
+	} else {
+		data["service"] = service
+	}
+	if len(sources) > 0 {
+		data["sources"] = sources
+	}
+	now := e.o.Now()
+	return e.emit([]occ{{typ: typ, sev: sev, key: typ + ":" + strconv.Itoa(port), ts: now, data: data}}, now)
 }
 
 // Metric runs the agent-side resource rules on a sample (spec A4.3).

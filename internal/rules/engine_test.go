@@ -30,6 +30,8 @@ func newEngine(t *testing.T, c *clock) *rules.Engine {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The risk scan found password login on: attacks are reported.
+	e.SetRisk(rules.Risk{Scan: true, SSHPassword: true})
 	return e
 }
 
@@ -55,10 +57,11 @@ func TestReplayAuthLog(t *testing.T) {
 		typ, sev, key string
 		check         func(d map[string]any) bool
 	}{
-		{proto.EventSSHBruteforce, "P2", "203.0.113.7", func(d map[string]any) bool {
-			return d["fail_count"] == 20 && d["window_seconds"] == 300 && fmt.Sprint(d["top_users"]) == "[root]"
+		{proto.EventSSHBruteforce, "P2", "ssh_bruteforce", func(d map[string]any) bool {
+			return d["fail_count"] == 20 && d["window_seconds"] == 300 && fmt.Sprint(d["top_users"]) == "[root]" &&
+				d["source"] == "203.0.113.7" && d["source_count"] == 1
 		}},
-		{proto.EventSSHSpray, "P2", "198.51.100.9", func(d map[string]any) bool { return d["user_count"] == 5 }},
+		{proto.EventSSHSpray, "P2", "ssh_spray", func(d map[string]any) bool { return d["user_count"] == 5 && d["source"] == "198.51.100.9" }},
 		{proto.EventSSHBreach, "P0", "192.0.2.50", func(d map[string]any) bool {
 			return d["prior_failures"] == 12 && d["user"] == "deploy" && d["method"] == "password"
 		}},
@@ -229,7 +232,121 @@ func TestSourceMaskedOnTheWire(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(sp.Bytes())
-	if strings.Contains(body, "8.8.4.4") || !strings.Contains(body, `"source":"8.8.4.x"`) || !strings.Contains(body, `"key":"8.8.4.x"`) {
+	if strings.Contains(body, "8.8.4.4") || !strings.Contains(body, `"source":"8.8.4.x"`) || !strings.Contains(body, `"key":"ssh_bruteforce"`) {
 		t.Fatalf("sealed: %s", body)
+	}
+}
+
+func fails(e *rules.Engine, c *clock, ip, user string, n int) []proto.Event {
+	var out []proto.Event
+	for range n {
+		out = append(out, e.Record(raw.Record{Kind: raw.SSHFail, TS: c.t, Data: map[string]any{"ip": ip, "user": user}})...)
+	}
+	return out
+}
+
+// Spec v1.1 delta 10.4: brute force is reported only while the scan finds
+// password login on; breaches always are.
+func TestAttacksFollowTheRiskScan(t *testing.T) {
+	c := &clock{t: time.Unix(1_790_000_000, 0)}
+	e := newEngine(t, c)
+	e.SetRisk(rules.Risk{Scan: true, SSHPassword: false})
+	if evs := fails(e, c, "8.8.4.4", "root", 25); len(evs) != 0 {
+		t.Fatalf("password login off, still reported: %+v", evs)
+	}
+	// Failures are still tracked: a login after them is a breach.
+	evs := e.Record(raw.Record{Kind: raw.SSHAccept, TS: c.t, Data: map[string]any{"ip": "8.8.4.4", "user": "deploy", "method": "publickey"}})
+	if len(evs) != 1 || evs[0].Type != proto.EventSSHBreach {
+		t.Fatalf("breach: %+v", evs)
+	}
+
+	// The scan turned off: only breaches and root password logins.
+	e.SetRisk(rules.Risk{})
+	if evs := fails(e, c, "8.8.8.8", "admin", 25); len(evs) != 0 {
+		t.Fatalf("scan off, still reported: %+v", evs)
+	}
+
+	// Password login turns on: an attack still going on is reported afresh.
+	e.SetRisk(rules.Risk{Scan: true, SSHPassword: true})
+	c.t = c.t.Add(time.Second)
+	evs = fails(e, c, "8.8.8.8", "admin", 1)
+	if len(evs) != 1 || evs[0].Type != proto.EventSSHBruteforce || evs[0].Severity != "P2" {
+		t.Fatalf("after turning on: %+v", evs)
+	}
+	if _, ok := evs[0].Data["root_attempts"]; ok {
+		t.Fatal("root attempts counted while root cannot use a password")
+	}
+}
+
+// One brute-force event per server: more sources join it rather than
+// starting their own (spec v1.1 delta 10.4).
+func TestBruteForceMergedPerServer(t *testing.T) {
+	c := &clock{t: time.Unix(1_790_000_000, 0)}
+	e := newEngine(t, c)
+	e.SetRisk(rules.Risk{Scan: true, SSHPassword: true, RootPassword: true})
+	first := fails(e, c, "8.8.4.4", "root", 20)
+	if len(first) != 1 || first[0].Severity != "P1" || first[0].Data["root_attempts"] != 20 {
+		t.Fatalf("first: %+v", first)
+	}
+	c.t = c.t.Add(time.Minute)
+	if more := append(fails(e, c, "9.9.9.9", "root", 20), fails(e, c, "1.1.1.1", "admin", 20)...); len(more) != 0 {
+		t.Fatalf("other sources started their own events: %+v", more)
+	}
+	c.t = c.t.Add(10 * time.Minute)
+	var upd *proto.Event
+	for _, ev := range e.Due() {
+		if ev.ID == first[0].ID {
+			upd = &ev
+		}
+	}
+	// The update counts everything since the first report.
+	if upd == nil || upd.Count != 2 || upd.Data["source_count"] != 3 || upd.Data["fail_count"] != 60 ||
+		upd.Data["root_attempts"] != 40 || upd.Key != "ssh_bruteforce" || upd.Data["window_seconds"] != 660 {
+		t.Fatalf("update: %+v", upd)
+	}
+}
+
+func TestSecuritySummary(t *testing.T) {
+	c := &clock{t: time.Date(2026, 9, 28, 10, 20, 0, 0, time.UTC)}
+	e := newEngine(t, c)
+	e.SetRisk(rules.Risk{Scan: true}) // password login off: no events, still counted
+	if s := e.SecuritySummary(); s != nil {
+		t.Fatalf("summary before the hour ended: %+v", s)
+	}
+	fails(e, c, "8.8.4.4", "root", 30)
+	fails(e, c, "9.9.9.9", "admin", 5)
+	fails(e, c, "9.9.9.9", "root", 2)
+	c.t = c.t.Add(30 * time.Minute)
+	if s := e.SecuritySummary(); s != nil {
+		t.Fatalf("summary mid-hour: %+v", s)
+	}
+	c.t = time.Date(2026, 9, 28, 11, 0, 5, 0, time.UTC)
+	s := e.SecuritySummary()
+	if s == nil || s.Attempts != 37 || s.Sources != 2 || len(s.TopUsers) != 2 || s.TopUsers[0] != (proto.UserCount{User: "root", Count: 32}) ||
+		s.Start != time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC).Unix() || s.End != time.Date(2026, 9, 28, 11, 0, 0, 0, time.UTC).Unix() {
+		t.Fatalf("summary: %+v", s)
+	}
+	// A quiet hour still yields a summary, with zero attempts.
+	c.t = c.t.Add(time.Hour)
+	if s := e.SecuritySummary(); s == nil || s.Attempts != 0 || s.Sources != 0 {
+		t.Fatalf("quiet hour: %+v", s)
+	}
+}
+
+func TestAccessEvents(t *testing.T) {
+	c := &clock{t: time.Unix(1_790_000_000, 0)}
+	e := newEngine(t, c)
+	db := e.Access(proto.EventDBPublicAccess, 6379, "redis", 3, []string{"203.0.113.x"})
+	dk := e.Access(proto.EventDockerAPIAccess, 2375, "docker", 1, nil)
+	if len(db) != 1 || db[0].Severity != "P1" || db[0].Key != "db_public_access:6379" || db[0].Data["service"] != "redis" {
+		t.Fatalf("db: %+v", db)
+	}
+	if len(dk) != 1 || dk[0].Severity != "P0" || dk[0].Data["port"] != 2375 {
+		t.Fatalf("docker: %+v", dk)
+	}
+	p := proto.Payload{V: 1, Seq: 1, SentAt: c.t.Unix(), AgentVersion: "test", MachineFP: "0123456789abcdef",
+		Events: append(db, dk...), Redactions: map[string]int{}}
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }

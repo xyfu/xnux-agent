@@ -40,6 +40,10 @@ type Collectors struct {
 	Kmsg     bool `yaml:"kmsg"`
 	Authlog  bool `yaml:"authlog"`
 	Procscan bool `yaml:"procscan"`
+	// Riskscan: the local risk scan that decides which security events are
+	// worth reporting (spec v1.1 delta 10). Off, only breaches, root
+	// password logins and the hourly summary are reported.
+	Riskscan bool `yaml:"riskscan"`
 }
 
 type Systemd struct {
@@ -88,7 +92,7 @@ func Default() *Config {
 		Endpoint:        DefaultEndpoint,
 		IntervalSeconds: 15,
 		FlushSeconds:    60,
-		Collectors:      Collectors{Metrics: true, Systemd: true, Kmsg: true, Authlog: true, Procscan: true},
+		Collectors:      Collectors{Metrics: true, Systemd: true, Kmsg: true, Authlog: true, Procscan: true, Riskscan: true},
 		Systemd:         Systemd{IgnoreUnits: []string{"apt-daily.service", "man-db.service"}},
 		Security:        Security{BruteforceFailThreshold: 20, SprayUserThreshold: 5, BreachFailThreshold: 10},
 		Sanitize:        Sanitize{MaskEmail: true},

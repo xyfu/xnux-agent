@@ -245,10 +245,11 @@ func (a *agent) status() map[string]any {
 	out := map[string]any{
 		"version": a.o.Version, "mode": mode, "started_at": a.started.Unix(), "uptime_s": int64(time.Since(a.started).Seconds()),
 		"capabilities": v.Caps, "collector_errors": a.watchErr.Snapshot(),
-		"host":    map[string]any{"hostname": a.host.Hostname, "os": a.host.OS, "kernel": a.host.Kernel, "arch": a.host.Arch, "cores": a.host.Cores},
-		"storage": map[string]any{"events_bytes": a.local.Size(), "metrics_bytes": localstore.Slots * localstore.RecordSize, "dir": a.o.StateDir},
-		"health":  a.health(),
-		"rss_mb":  selfRSSMB(),
+		"host":     map[string]any{"hostname": a.host.Hostname, "os": a.host.OS, "kernel": a.host.Kernel, "arch": a.host.Arch, "cores": a.host.Cores},
+		"storage":  map[string]any{"events_bytes": a.local.Size(), "metrics_bytes": localstore.Slots * localstore.RecordSize, "dir": a.o.StateDir},
+		"health":   a.health(),
+		"rss_mb":   selfRSSMB(),
+		"riskscan": a.riskStatus(),
 	}
 	if !v.Standalone {
 		out["endpoint"] = v.Endpoint

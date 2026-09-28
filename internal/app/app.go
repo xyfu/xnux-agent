@@ -31,6 +31,7 @@ import (
 	"github.com/xyfu/xnux-agent/internal/mirror"
 	"github.com/xyfu/xnux-agent/internal/procfs"
 	"github.com/xyfu/xnux-agent/internal/raw"
+	"github.com/xyfu/xnux-agent/internal/riskscan"
 	"github.com/xyfu/xnux-agent/internal/rules"
 	"github.com/xyfu/xnux-agent/internal/sender"
 	"github.com/xyfu/xnux-agent/internal/snapshot"
@@ -206,6 +207,11 @@ type agent struct {
 	scanner  *procscan.Scanner
 	eventT   *time.Timer
 	dueT     *time.Timer
+
+	// The local risk scan (spec v1.1 delta 10): results only in memory.
+	riskCh  chan riskscan.Result
+	risk    atomic.Pointer[riskscan.Result]
+	monitor *riskscan.Monitor
 }
 
 // Collector availability (spec A1 start-up): a collector that is enabled
@@ -391,6 +397,7 @@ func (a *agent) loop(ctx context.Context) error {
 	wctx, stopWatchers := context.WithCancel(ctx)
 	defer stopWatchers()
 	a.startWatchers(wctx)
+	a.startRiskScan(wctx)
 	a.eventT = stoppedTimer()
 	a.dueT = stoppedTimer()
 	defer a.eventT.Stop()
@@ -412,10 +419,14 @@ func (a *agent) loop(ctx context.Context) error {
 		case <-a.dueT.C:
 			a.events(a.engine.Due())
 			a.armDue()
+		case r := <-a.riskCh:
+			a.applyRisk(r)
 		case t := <-sampleT.C:
 			a.sample(t)
+			a.checkAccess(t)
 		case <-flushT.C:
 			a.refreshHost(false)
+			a.attachSummary()
 			a.flush(false)
 		case <-hbT.C:
 			if time.Since(a.lastEmit) >= heartbeatAfter {
@@ -439,6 +450,7 @@ func (a *agent) once(ctx context.Context) error {
 	case now := <-t.C:
 		a.sample(now)
 	}
+	a.scanOnce(ctx)
 	a.refreshHost(true)
 	a.flush(false)
 	if a.sender == nil {

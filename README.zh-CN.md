@@ -49,7 +49,7 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 | 2. 刚才发了什么 | `xnux payload --last`（即 `/var/log/xnux/last_outgoing_payload.json`），与控制台审计台显示的原文和 sha256 对比 |
 | 3. 二进制是不是这份源码 | `git checkout vX.Y.Z && make agent VERSION=vX.Y.Z COMMIT=$(git rev-parse --short HEAD) && sha256sum bin/xnux-agent-linux-*`，与 Release 的 `SHA256SUMS` 对比；另有 cosign 签名 |
 
-探针只有一个出站请求（`POST /v1/ingest`，独立模式下连这个也没有），不监听网络端口（命令行走本机 Unix Socket）、不接收远程指令、没有自动升级。字段见 [docs/payload.md](docs/payload.zh-CN.md)，脱敏见 [docs/redaction.md](docs/redaction.zh-CN.md)，不想用 root 运行见 [docs/least-privilege.md](docs/least-privilege.zh-CN.md)，隐藏源站 IP 见 [docs/relay.md](docs/relay.zh-CN.md)。
+探针只有一个出站请求（`POST /v1/ingest`，独立模式下连这个也没有），不监听网络端口（命令行走本机 Unix Socket）、不接收远程指令、没有自动升级。字段见 [docs/payload.md](docs/payload.zh-CN.md)，脱敏见 [docs/redaction.md](docs/redaction.zh-CN.md)，本地风险扫描读取什么、为什么见 [docs/risk-scan.md](docs/risk-scan.zh-CN.md)，不想用 root 运行见 [docs/least-privilege.md](docs/least-privilege.zh-CN.md)，隐藏源站 IP 见 [docs/relay.md](docs/relay.zh-CN.md)。
 
 ## 开发
 
