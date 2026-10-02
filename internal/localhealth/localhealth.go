@@ -8,18 +8,12 @@ package localhealth
 import (
 	"math"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/xyfu/xnux-shared/health"
 	"github.com/xyfu/xnux-shared/proto"
 
 	"github.com/xyfu/xnux-agent/internal/localstore"
-)
-
-var (
-	security  = []string{"ssh_bruteforce", "ssh_spray", "ssh_root_password_login", "sudo_sensitive", "sudo_auth_fail", "su_root", "user_created", "proc_fileless", "proc_deleted_exe", "proc_stale_binary", "proc_tmp_exec"}
-	intrusion = []string{"ssh_breach", "proc_reverse_shell"}
 )
 
 // Result is a score, or why there is none yet.
@@ -77,7 +71,10 @@ func Score(minutes []localstore.Minute, latest *proto.Metric, events []localstor
 		}
 	}
 
+	// Local events have no status: those of the last 24 hours count as
+	// open, one per type and key (the service merges them likewise).
 	day, hourAgo := now.Add(-24*time.Hour).Unix(), now.Add(-time.Hour).Unix()
+	byKey := map[string]int{}
 	for _, e := range events {
 		ts := e.TS
 		if e.LastTS > ts {
@@ -87,57 +84,48 @@ func Score(minutes []localstore.Minute, latest *proto.Metric, events []localstor
 			continue
 		}
 		n := max(e.Count, 1)
+		recentN := 0
+		if ts >= hourAgo {
+			recentN = n
+		}
 		switch e.Type {
 		case "service_failed":
-			in.OpenServiceFailed++
 			in.ServiceCrashes24h += n
 		case "oom_kill":
 			in.OOM24h += n
-			if ts >= hourAgo {
-				in.OOM1h += n
-			}
+			in.OOM1h += recentN
 		case "proc_segfault":
 			in.Segfaults24h += n
 		case "hung_task":
 			in.HungTask24h += n
-		case "disk_error", "fs_readonly":
-			in.OpenDiskFailure++
-		}
-		if e.Type == "ssh_root_password_login" {
+		case "ssh_root_password_login":
 			in.RootPasswordLogin = true
 		}
-		switch {
-		case has(intrusion, e.Type):
-			in.OpenP0Intrusion++
-		case e.Type == "ssh_bruteforce" || e.Type == "ssh_spray":
-			// Once per server (health/v2): P1 while root may use a password.
-			if strings.EqualFold(e.Severity, "P1") {
-				in.OpenSSHAttack = 1
-			} else if in.OpenSSHAttack == 0 {
-				in.OpenSSHAttack = 2
-			}
-		case e.Type == "db_public_access":
-			in.OpenDBPublic++
-		case has(security, e.Type):
-			switch strings.ToUpper(e.Severity) {
-			case "P1":
-				in.OpenP1Security++
-			case "P2":
-				in.OpenP2Security++
-			}
+		k := e.Type + "\x00" + e.Key
+		i, ok := byKey[k]
+		if !ok {
+			i = len(in.Events)
+			byKey[k] = i
+			in.Events = append(in.Events, health.Event{ID: e.ID, Type: e.Type, Severity: severity(e.Severity),
+				State: health.StateOpen, Subject: e.Key})
+		}
+		ev := &in.Events[i]
+		ev.Count24h += n
+		ev.Count1h += recentN
+		if s := severity(e.Severity); s < ev.Severity {
+			ev.Severity = s
 		}
 	}
 	r := health.Score(in)
 	return Result{State: "scored", Score: &r}
 }
 
-func has(list []string, v string) bool {
-	for _, x := range list {
-		if x == v {
-			return true
-		}
+// severity is "P0"…"P3" as 0…3 (3 when unknown).
+func severity(s string) int {
+	if len(s) == 2 && (s[0] == 'P' || s[0] == 'p') && s[1] >= '0' && s[1] <= '3' {
+		return int(s[1] - '0')
 	}
-	return false
+	return 3
 }
 
 // pct is the q-quantile (nearest rank), nil without data.
