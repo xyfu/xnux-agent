@@ -1,0 +1,11 @@
+{
+  "level": "optional",
+  "highlights": {
+    "zh-Hans": [
+      "本机 xnux status 的健康度改用 health/v3，与控制台一致：每个未结束的问题单独扣分并显示"
+    ],
+    "en": [
+      "The local xnux status scores health with health/v3, as the console does: each open problem is shown with its own deduction"
+    ]
+  }
+}
