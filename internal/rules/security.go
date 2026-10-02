@@ -264,18 +264,14 @@ func (s *security) fail(addr, user string, n int, t time.Time) []occ {
 	// Failures are always tracked (ssh_breach needs them); brute force and
 	// spray are reported only while the scan finds password login on.
 	var out []occ
-	if src.brute {
-		if s.brute != nil {
-			s.brute.more += n
-		}
+	if src.brute && s.brute != nil {
+		s.brute.more += n
 	} else if countSince(src.fails, t.Add(-bruteWindow)) >= s.cfg.BruteforceFailThreshold {
 		src.brute = true
 		out = append(out, s.trigger(&s.brute, proto.EventSSHBruteforce, t)...)
 	}
-	if src.spray {
-		if s.spray != nil {
-			s.spray.more += max(n, 1)
-		}
+	if src.spray && s.spray != nil {
+		s.spray.more += max(n, 1)
 	} else if src.usersSince(t.Add(-sprayWindow)) >= s.cfg.SprayUserThreshold {
 		src.spray = true
 		out = append(out, s.trigger(&s.spray, proto.EventSSHSpray, t)...)
@@ -491,12 +487,17 @@ func (s *security) due(now time.Time) []occ {
 			continue
 		}
 		if b.more == 0 {
+			// Quiet for the whole silence: the burst ends, and its sources
+			// start over, so an attack resumed later is reported again.
 			*pb = nil
+			s.resetSources(b.ev.Type)
 			continue
 		}
 		b.ev.Count++
 		b.ev.LastTS = now.Unix()
-		b.ev.Severity = s.attackSeverity()
+		if sev := s.attackSeverity(); sev < b.ev.Severity {
+			b.ev.Severity = sev // never lower within one id (C-AG-EVENT-UPDATES)
+		}
 		b.ev.Data = s.burstData(b.ev.Type, now, b.until.Add(-burstSilence))
 		b.more = 0
 		b.until = now.Add(burstSilence)
@@ -504,6 +505,18 @@ func (s *security) due(now time.Time) []occ {
 		out = append(out, occ{ev: &ev})
 	}
 	return out
+}
+
+// resetSources clears the brute-force or spray mark of every source.
+func (s *security) resetSources(typ string) {
+	for el := s.lru.Front(); el != nil; el = el.Next() {
+		src := el.Value.(*source)
+		if typ == proto.EventSSHSpray {
+			src.spray = false
+		} else {
+			src.brute = false
+		}
+	}
 }
 
 func (s *security) nextDue() (t time.Time, ok bool) {

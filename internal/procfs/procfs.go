@@ -111,6 +111,23 @@ func (fs FS) CPUTicks(pid int) (uint64, bool) {
 	return u + s, err1 == nil && err2 == nil
 }
 
+// StartTime is the process start time from /proc/<pid>/stat, in clock
+// ticks after boot: with the PID it identifies a process across PID reuse.
+func (fs FS) StartTime(pid int) (uint64, bool) {
+	b := fs.Read(pid, "stat")
+	i := bytes.LastIndexByte(b, ')')
+	if i < 0 {
+		return 0, false
+	}
+	f := strings.Fields(string(b[i+1:]))
+	// starttime is field 22 → index 19 after ')'.
+	if len(f) < 20 {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(f[19], 10, 64)
+	return n, err == nil
+}
+
 // Unit is the systemd service the process belongs to, from its cgroup path
 // ("…/nginx.service" or "…/nginx.service/…"), or "".
 func (fs FS) Unit(pid int) string {

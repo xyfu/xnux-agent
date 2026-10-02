@@ -73,6 +73,15 @@ func (a *agent) attachSummary() {
 	}
 }
 
+// attachFailed repeats the failed-unit list once an hour, so that the
+// server can end service events even if a change was lost.
+func (a *agent) attachFailed() {
+	if a.failedList != nil && time.Since(a.failedSentAt) >= time.Hour {
+		a.failedSentAt = time.Now()
+		a.batcher.SetServicesFailed(a.failedList)
+	}
+}
+
 // riskStatus is the scan section of "xnux status": when it ran, what each
 // check found and which reports are on because of it.
 func (a *agent) riskStatus() map[string]any {

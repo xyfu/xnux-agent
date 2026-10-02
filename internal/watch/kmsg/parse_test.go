@@ -52,6 +52,19 @@ func TestMatch(t *testing.T) {
 	if !ok || r.Kind != "fs_readonly" || r.Data["device"] != "sda1" {
 		t.Fatalf("readonly: %+v", r)
 	}
+	// Device-mapper and md names keep their dash (they used to become "dm").
+	for msg, want := range map[string]string{
+		"Buffer I/O error on dev dm-0, logical block 0, async page read":    "dm-0",
+		"XFS (dm-1): metadata I/O error in \"xfs_imap_to_bp\" at daddr 0x4": "dm-1",
+		"EXT4-fs (md127p1): Remounting filesystem read-only":                "md127p1",
+	} {
+		if r, ok := m.Match(msg, ts); !ok || r.Data["device"] != want || r.Key != want {
+			t.Errorf("%q: %+v, want device %s", msg, r, want)
+		}
+	}
+	if r, ok := m.Match("blk_update_request: critical medium error, sector 2048", ts); !ok || r.Key != "unknown" || r.Data["device"] != nil {
+		t.Errorf("no device: %+v", r)
+	}
 	r, ok = m.Match("INFO: task jbd2/sda1-8:312 blocked for more than 122 seconds.", ts)
 	if !ok || r.Kind != "hung_task" || r.Data["comm"] != "jbd2/sda1-8" || r.Data["pid"] != 312 || r.Data["blocked_seconds"] != 122 {
 		t.Fatalf("hung: %+v", r)

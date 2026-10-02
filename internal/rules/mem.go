@@ -7,13 +7,14 @@ import (
 )
 
 // Agent-side resource rules that need every sample (spec A4.3). Both fire
-// once when the condition starts and re-arm when it clears.
+// once when the condition starts and re-arm when it clears. The thresholds
+// live in xnux-shared: the server uses them to end the events.
 const (
-	thrashInPS     = 100
-	thrashSamples  = 4
-	pressureAvail  = 5.0  // % of memory available
-	pressureGrowth = 0.10 // swap used growth within a minute
-	pressureWindow = 60   // seconds
+	thrashInPS     = proto.SwapThrashingInPS
+	thrashSamples  = proto.SwapThrashingSamples
+	pressureAvail  = proto.MemPressureAvailPct // % of memory available
+	pressureGrowth = 0.10                      // swap used growth within a minute
+	pressureWindow = 60                        // seconds
 )
 
 type swapPoint struct {

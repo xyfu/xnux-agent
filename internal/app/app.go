@@ -208,6 +208,12 @@ type agent struct {
 	eventT   *time.Timer
 	dueT     *time.Timer
 
+	// The systemd watcher's list of failed units (decision L19): sent when
+	// it changes and again every hour.
+	failedCh     chan []string
+	failedList   []string
+	failedSentAt time.Time
+
 	// The local risk scan (spec v1.1 delta 10): results only in memory.
 	riskCh  chan riskscan.Result
 	risk    atomic.Pointer[riskscan.Result]
@@ -257,6 +263,7 @@ func (a *agent) run(ctx context.Context) error {
 	a.capturer = &snapshot.Capturer{Ring: a.ring, Proc: procfs.FS{Root: filepath.Join(a.o.Root, "proc")}}
 	a.records = make(chan raw.Record, 256)
 	a.snapped = make(chan proto.Event, 64)
+	a.failedCh = make(chan []string, 4)
 
 	a.newBatcher()
 
@@ -412,6 +419,10 @@ func (a *agent) loop(ctx context.Context) error {
 			reply <- a.applyReload()
 		case r := <-a.records:
 			a.events(a.engine.Record(r))
+		case l := <-a.failedCh:
+			a.failedList, a.failedSentAt = l, time.Now()
+			a.batcher.SetServicesFailed(l)
+			a.gather()
 		case ev := <-a.snapped:
 			a.addEvent(ev)
 		case <-a.eventT.C:
@@ -427,6 +438,7 @@ func (a *agent) loop(ctx context.Context) error {
 		case <-flushT.C:
 			a.refreshHost(false)
 			a.attachSummary()
+			a.attachFailed()
 			a.flush(false)
 		case <-hbT.C:
 			if time.Since(a.lastEmit) >= heartbeatAfter {
@@ -511,7 +523,7 @@ func (a *agent) startWatchers(ctx context.Context) {
 		go watch.Supervise(ctx, name, a.log, &a.watchErr, fn)
 	}
 	if caps["systemd"] {
-		w := &systemd.Watcher{Ignore: a.cfg.Systemd.IgnoreUnits, Out: a.records}
+		w := &systemd.Watcher{Ignore: a.cfg.Systemd.IgnoreUnits, Out: a.records, Failed: a.failedCh}
 		start("systemd", w.Run)
 	}
 	if caps["kmsg"] {
@@ -538,7 +550,10 @@ func (a *agent) startWatchers(ctx context.Context) {
 	if caps["procscan"] {
 		a.scanner = &procscan.Scanner{Proc: procfs.FS{Root: filepath.Join(a.o.Root, "proc")}, Root: a.o.Root,
 			WhitelistExe: a.cfg.Procscan.WhitelistExe, WhitelistComm: a.cfg.Procscan.WhitelistComm, Out: a.records}
-		a.st.View(func(d *state.Data) { a.scanner.SetStale(d.StaleBinaryReported) })
+		a.st.View(func(d *state.Data) {
+			a.scanner.SetStale(d.StaleBinaryReported)
+			a.scanner.SetReported(d.ProcReported)
+		})
 		start("procscan", a.scanner.Run)
 	}
 }
@@ -572,6 +587,14 @@ func (a *agent) addEvent(ev proto.Event) {
 	if ev.Severity == proto.SeverityP0 {
 		a.eventT.Stop()
 		a.flush(false)
+		return
+	}
+	a.gather()
+}
+
+// gather flushes shortly, so that what arrives together is sent together.
+func (a *agent) gather() {
+	if a.eventT == nil {
 		return
 	}
 	if !a.eventT.Stop() {
@@ -645,6 +668,7 @@ func (a *agent) save() {
 		}
 		if a.scanner != nil {
 			d.StaleBinaryReported = a.scanner.Stale()
+			d.ProcReported = a.scanner.Reported()
 		}
 	})
 	if err := a.st.Save(); err != nil {

@@ -218,6 +218,9 @@ func (e *Engine) occur(o occ, now time.Time) (proto.Event, bool) {
 			p.ev.Count++
 			p.ev.LastTS = ts.Unix()
 			p.ev.Data = o.data // the latest occurrence's details
+			if o.sev < p.ev.Severity {
+				p.ev.Severity = o.sev // never lower within one id (C-AG-EVENT-UPDATES)
+			}
 			p.dirty = true
 			return proto.Event{}, false
 		}

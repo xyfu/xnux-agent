@@ -198,3 +198,80 @@ func TestWatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func nextList(t *testing.T, ch chan []string) []string {
+	t.Helper()
+	select {
+	case l := <-ch:
+		return l
+	case <-time.After(3 * time.Second):
+		t.Fatal("no list")
+	}
+	return nil
+}
+
+// The list of down units (decision L19): sent on connect and on every
+// change; a clean exit under Restart=always is not a failure; a reset unit
+// leaves the list; a unit down before the agent started still recovers.
+func TestFailedList(t *testing.T) {
+	addr := startBus(t)
+	old := running("old.service")
+	old.ActiveState, old.SubState = "failed", "failed"
+	f := newFake(t, addr, old, running("app.service"), running("always.service"), running("stale.service"))
+	f.unit("app.service", map[string]any{"Result": "exit-code", "ExecMainCode": int32(1), "ExecMainStatus": int32(1)})
+	f.unit("always.service", map[string]any{"Result": "success", "ExecMainCode": int32(1), "ExecMainStatus": int32(0)})
+	f.unit("stale.service", map[string]any{"Result": "weird-new-result"})
+
+	out := make(chan raw.Record, 16)
+	lists := make(chan []string, 16)
+	w := &Watcher{Address: addr, Out: out, Failed: lists, RecoverAfter: 300 * time.Millisecond,
+		LogTail: func(context.Context, string) []string { return []string{} }}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	if l := nextList(t, lists); len(l) != 1 || l[0] != "old.service" {
+		t.Fatalf("initial list %v", l)
+	}
+
+	f.state("always.service", "activating", "auto-restart")
+	select {
+	case r := <-out:
+		t.Fatalf("clean exit reported: %+v", r)
+	case l := <-lists:
+		t.Fatalf("clean exit listed: %v", l)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	f.state("app.service", "failed", "failed")
+	if l := nextList(t, lists); len(l) != 2 || l[0] != "app.service" || l[1] != "old.service" {
+		t.Fatalf("after crash %v", l)
+	}
+	if r := next(t, out); r.Kind != "service_failed" || r.Data["log_tail"] != nil {
+		t.Fatalf("crash: %+v", r)
+	}
+
+	f.state("stale.service", "failed", "failed")
+	nextList(t, lists)
+	if r := next(t, out); r.Data["result"] != "unknown" {
+		t.Fatalf("unknown result: %+v", r)
+	}
+
+	f.state("stale.service", "inactive", "dead") // systemctl reset-failed
+	if l := nextList(t, lists); len(l) != 2 || l[0] != "app.service" || l[1] != "old.service" {
+		t.Fatalf("after reset %v", l)
+	}
+
+	f.state("old.service", "active", "running")
+	if r := next(t, out); r.Kind != "service_recovered" || r.Key != "old.service" {
+		t.Fatalf("recovery of a unit down before start: %+v", r)
+	}
+	if l := nextList(t, lists); len(l) != 1 || l[0] != "app.service" {
+		t.Fatalf("after recovery %v", l)
+	}
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

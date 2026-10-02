@@ -32,6 +32,14 @@ type Data struct {
 	Authlog             *AuthlogPos           `json:"authlog,omitempty"`
 	DiskGrowth          map[string][][2]int64 `json:"disk_growth,omitempty"` // mount -> [unix, used bytes]
 	StaleBinaryReported map[string]int64      `json:"stale_binary_reported,omitempty"`
+	ProcReported        *ProcReported         `json:"proc_reported,omitempty"`
+}
+
+// ProcReported is what procscan already reported, so a restart does not
+// report the same running process again. It is valid for one boot.
+type ProcReported struct {
+	BootID string            `json:"boot_id"`
+	Procs  map[string]string `json:"procs"` // "pid:starttime" → exe
 }
 
 // Store guards Data and writes it atomically. It is safe for concurrent use.

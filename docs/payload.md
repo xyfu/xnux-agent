@@ -35,6 +35,7 @@ TLS ≥ 1.2 with certificate verification (there is no "skip verification" optio
 | `events[]` | Incident context events |
 | `diag` | Agent self-diagnostics: `rss_mb`, `spool_mb`, `kmsg_lost`, `dropped_metrics`, `collector_errors` |
 | `security_summary` | Once an hour, whatever the [risk scan](risk-scan.md) found: failed SSH logins of the past hour — `start`, `end`, `attempts`, `root_attempts` (of them, on the user root), `sources` (distinct addresses in the hour, counted only), `sources_24h` (distinct addresses in the 24 hours up to `end`, counted only) and `top_users[]` (`user`, `count`, at most 5). No authentication methods, no addresses |
+| `services_failed` | The `.service` units that are failed or restarting after a crash right now, by name: at startup, on a D-Bus reconnect, whenever the list changes and once an hour; `[]` means none. The server ends a service event whose unit has left the list. Omitted without the systemd collector |
 | `redactions` | Hit count for each redaction rule in this payload, e.g. `{"ipv4": 2}` |
 
 ## `host`
@@ -89,7 +90,7 @@ Not collected: IP addresses, MAC addresses, network interface list, user list, i
 | `user_created` | `name`, `uid` |
 | `su_root` | `by_user` |
 | `proc_fileless`, `proc_deleted_exe`, `proc_stale_binary`, `proc_tmp_exec` | `pid`, `comm`, `exe`, `cmdline`, `uid`, `ppid_comm` |
-| `proc_reverse_shell` | Same as above, plus `remote` (redacted) |
+| `proc_reverse_shell` | Same as above, plus `remote` (redacted); `key` is the binary's path, as for the other process events |
 | `swap_thrashing`, `mem_pressure` | `in_ps`, `available_mb`, `swap_used_mb` |
 | `db_public_access` | Only while a database port listens on the internet: `port`, `service`, `bind_scope` (`all_interfaces` or `public_address`; never the address), `connections`, `sources[]` (redacted networks); at most one an hour per port |
 | `docker_api_access` | Only while the Docker API is served over TCP without TLS: `port`, `tls` (always `false`), `bind_scope`, `connections`, `sources[]`; at most one an hour per port |

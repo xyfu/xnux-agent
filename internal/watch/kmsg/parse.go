@@ -63,16 +63,18 @@ func unescape(s string) string {
 }
 
 var (
-	reOOM      = regexp.MustCompile(`(Memory cgroup )?[Oo]ut of memory.*?: Killed process (\d+) \((.+?)\) total-vm:(\d+)kB, anon-rss:(\d+)kB, file-rss:(\d+)kB, shmem-rss:(\d+)kB(?:, UID:(\d+))?.*?oom_score_adj:(-?\d+)`)
-	reOOMCons  = regexp.MustCompile(`oom-kill:constraint=(\w+),.*?oom_memcg=([^,]*),task_memcg=([^,]*),task=([^,]+),pid=(\d+)`)
-	reSegv     = regexp.MustCompile(`(\S+)\[(\d+)\]: segfault at ([0-9a-f]+) ip ([0-9a-f]+) sp ([0-9a-f]+) error (\d+)(?: in (\S+))?`)
-	reDevWord  = regexp.MustCompile(`\bdev(?:ice)? (\w+)`) // "dev sdb," and ext4's "(device sda1)"
-	reDevParen = regexp.MustCompile(`\((\w+)\)`)
+	reOOM     = regexp.MustCompile(`(Memory cgroup )?[Oo]ut of memory.*?: Killed process (\d+) \((.+?)\) total-vm:(\d+)kB, anon-rss:(\d+)kB, file-rss:(\d+)kB, shmem-rss:(\d+)kB(?:, UID:(\d+))?.*?oom_score_adj:(-?\d+)`)
+	reOOMCons = regexp.MustCompile(`oom-kill:constraint=(\w+),.*?oom_memcg=([^,]*),task_memcg=([^,]*),task=([^,]+),pid=(\d+)`)
+	reSegv    = regexp.MustCompile(`(\S+)\[(\d+)\]: segfault at ([0-9a-f]+) ip ([0-9a-f]+) sp ([0-9a-f]+) error (\d+)(?: in (\S+))?`)
+	// "dev sdb," and ext4's "(device sda1)"; names like dm-0 and md127p1.
+	reDevWord  = regexp.MustCompile(`\bdev(?:ice)? (\w[\w.-]*\w|\w)`)
+	reDevParen = regexp.MustCompile(`\((\w[\w.-]*\w|\w)\)`)
 	reHung     = regexp.MustCompile(`task (\S+):(\d+) blocked for more than (\d+) seconds`)
 )
 
 const (
 	maxMessage  = 256
+	maxDevice   = 64
 	mergeWindow = 2 * time.Second
 )
 
@@ -185,6 +187,7 @@ func device(typ, msg string, ts time.Time) raw.Record {
 	d := map[string]any{"message": rules.Clean(msg, maxMessage)}
 	key := "unknown"
 	if dev != "" {
+		dev = rules.Clean(dev, maxDevice)
 		d["device"], key = dev, dev
 	}
 	return raw.Record{Kind: typ, TS: ts, Key: key, Data: d}

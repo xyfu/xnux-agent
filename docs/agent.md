@@ -59,7 +59,7 @@ metric samples ──┘   (memory rules)
 
 | Watcher | Source | Events |
 | --- | --- | --- |
-| systemd | system bus `Subscribe` + `PropertiesChanged` / `JobRemoved` | `service_failed` (including `auto-restart`), `service_start_failed`, `service_recovered`; with the exit code or signal name, `NRestarts`, `MemoryPeak`, and the last 50 lines of `journalctl -u` |
+| systemd | system bus `Subscribe` + `PropertiesChanged` / `JobRemoved` | `service_failed` (including `auto-restart`), `service_start_failed`, `service_recovered`; with the exit code or signal name, `NRestarts`, `MemoryPeak`, and the last 50 lines of `journalctl -u`. A clean exit of a `Restart=always` service is not a failure. The units down right now go in `services_failed` |
 | kmsg | `/dev/kmsg`, read from the end | `oom_kill` (global / memcg, merging the `oom-kill:constraint` line), `proc_segfault`, `disk_error`, `fs_readonly`, `hung_task` |
 | authlog | `/var/log/auth.log` → `/var/log/secure` → `journalctl -f` | Raw records are not reported; they only feed the security state machine: `ssh_bruteforce`, `ssh_spray`, `ssh_breach`, `ssh_root_password_login`, `sudo_sensitive`, `sudo_auth_fail`, `user_created`, `su_root` |
 | procscan | Scans `/proc` every 300 seconds + a random 0–30 second offset | `proc_reverse_shell`, `proc_fileless`, `proc_deleted_exe`, `proc_stale_binary`, `proc_tmp_exec` |

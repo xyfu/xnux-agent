@@ -170,8 +170,14 @@ func TestCleaning(t *testing.T) {
 	if ev.Key != "xred" || ev.Data["comm"] != "bad�name" || !ev.TSAdjusted || ev.TS != c.t.Unix() {
 		t.Fatalf("cleaning: %+v", ev)
 	}
-	if m := ev.Data["module"].(string); len(m) > rules.MaxField+3 || !strings.HasSuffix(m, "…") {
-		t.Fatalf("not truncated: %d bytes", len(m))
+	if m := ev.Data["module"].(string); len(m) > rules.MaxField || !strings.HasSuffix(m, "…") {
+		t.Fatalf("not truncated within the limit: %d bytes", len(m))
+	}
+	if got := rules.Clean(strings.Repeat("k", 600), rules.MaxField); len(got) != rules.MaxField {
+		t.Fatalf("key of %d bytes", len(got))
+	}
+	if got := rules.Cmdline([]byte(strings.Repeat("a", 300))); len(got) != 256 {
+		t.Fatalf("cmdline of %d bytes", len(got))
 	}
 	if _, ok := ev.Data["nan"]; ok {
 		t.Fatal("NaN kept")
@@ -359,5 +365,58 @@ func TestAccessEvents(t *testing.T) {
 		Events: append(db, dk...), Redactions: map[string]int{}}
 	if err := p.Validate(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Within one id the severity never goes down; a more severe repeat raises it.
+func TestDebounceSeverityOnlyRises(t *testing.T) {
+	c := &clock{t: time.Unix(1_790_000_000, 0)}
+	e := newEngine(t, c)
+	rec := func(sev string) raw.Record {
+		return raw.Record{Kind: proto.EventProcTmpExec, TS: c.t, Key: "/tmp/x", Severity: sev,
+			Data: map[string]any{"pid": 7, "comm": "x", "exe": "/tmp/x"}}
+	}
+	first := e.Record(rec(proto.SeverityP2))
+	c.t = c.t.Add(5 * time.Second)
+	e.Record(rec(proto.SeverityP1))
+	c.t = c.t.Add(5 * time.Second)
+	e.Record(rec(proto.SeverityP3))
+	next, _ := e.NextDue()
+	c.t = next
+	upd := e.Due()
+	if len(first) != 1 || len(upd) != 1 || upd[0].ID != first[0].ID || upd[0].Severity != proto.SeverityP1 {
+		t.Fatalf("first %+v, update %+v", first, upd)
+	}
+}
+
+// A brute force that pauses past the silence and resumes is reported
+// again, and an update never lowers the severity (AG-EV-ACCURACY).
+func TestBruteForceResumesAndKeepsSeverity(t *testing.T) {
+	c := &clock{t: time.Unix(1_790_000_000, 0)}
+	e := newEngine(t, c)
+	e.SetRisk(rules.Risk{Scan: true, SSHPassword: true, RootPassword: true})
+	first := fails(e, c, "8.8.4.4", "root", 20)
+	if len(first) != 1 || first[0].Severity != "P1" {
+		t.Fatalf("first: %+v", first)
+	}
+	// Root may no longer use a password; the attack goes on.
+	e.SetRisk(rules.Risk{Scan: true, SSHPassword: true})
+	c.t = c.t.Add(time.Minute)
+	fails(e, c, "8.8.4.4", "root", 5)
+	c.t = c.t.Add(10 * time.Minute)
+	upd := e.Due()
+	if len(upd) != 1 || upd[0].ID != first[0].ID || upd[0].Severity != "P1" {
+		t.Fatalf("update: %+v", upd)
+	}
+	// Quiet for a whole silence: the burst ends.
+	c.t = c.t.Add(10 * time.Minute)
+	if evs := e.Due(); len(evs) != 0 {
+		t.Fatalf("quiet burst sent %+v", evs)
+	}
+	// The same source resumes within its 30-minute memory: a new event.
+	c.t = c.t.Add(5 * time.Minute)
+	again := fails(e, c, "8.8.4.4", "root", 20)
+	if len(again) != 1 || again[0].ID == first[0].ID || again[0].Type != proto.EventSSHBruteforce {
+		t.Fatalf("resumed attack: %+v", again)
 	}
 }

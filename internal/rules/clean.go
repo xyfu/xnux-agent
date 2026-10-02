@@ -6,6 +6,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/xyfu/xnux-shared/proto"
 )
 
 // MaxField bounds every string field (spec A4.1).
@@ -17,13 +19,14 @@ const maxSkew = 24 * time.Hour
 
 // Clean makes a string safe to report: invalid UTF-8 becomes U+FFFD, ANSI
 // escape sequences and control characters are removed, and the result is
-// cut to max bytes (on a rune boundary) with "…" appended.
+// cut on a rune boundary to at most max bytes, the "…" that marks the cut
+// included (the server rejected 515-byte keys).
 func Clean(s string, max int) string {
 	if isPlain(s) && len(s) <= max {
 		return s
 	}
 	var b strings.Builder
-	b.Grow(min(len(s), max+3))
+	b.Grow(min(len(s), max+utf8.UTFMax))
 	for i := 0; i < len(s); {
 		if s[i] == 0x1b { // ESC: skip a CSI/OSC sequence or the lone escape
 			i = skipEscape(s, i)
@@ -40,8 +43,8 @@ func Clean(s string, max int) string {
 			continue
 		}
 		if b.Len()+utf8.RuneLen(r) > max {
-			b.WriteString("…")
-			return b.String()
+			b.WriteRune(r)
+			return proto.Truncate(b.String(), max)
 		}
 		b.WriteRune(r)
 	}

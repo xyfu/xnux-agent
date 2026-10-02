@@ -59,7 +59,7 @@ auth.log/journal ┼─► 规则引擎（清洗 → 安全状态机 → 防抖�
 
 | 监听器 | 来源 | 事件 |
 | --- | --- | --- |
-| systemd | system bus `Subscribe` + `PropertiesChanged` / `JobRemoved` | `service_failed`（含 `auto-restart`）、`service_start_failed`、`service_recovered`；附退出码或信号名、`NRestarts`、`MemoryPeak`、`journalctl -u` 最后 50 行 |
+| systemd | system bus `Subscribe` + `PropertiesChanged` / `JobRemoved` | `service_failed`（含 `auto-restart`）、`service_start_failed`、`service_recovered`；附退出码或信号名、`NRestarts`、`MemoryPeak`、`journalctl -u` 最后 50 行。`Restart=always` 服务的正常退出不算失败。当前失败的单元放在 `services_failed` 中上报 |
 | kmsg | `/dev/kmsg`，从末尾读 | `oom_kill`（全局 / memcg，合并 `oom-kill:constraint` 行）、`proc_segfault`、`disk_error`、`fs_readonly`、`hung_task` |
 | authlog | `/var/log/auth.log` → `/var/log/secure` → `journalctl -f` | 原始记录不上报，只喂安全状态机：`ssh_bruteforce`、`ssh_spray`、`ssh_breach`、`ssh_root_password_login`、`sudo_sensitive`、`sudo_auth_fail`、`user_created`、`su_root` |
 | procscan | 每 300 秒 + 0–30 秒随机偏移扫描 `/proc` | `proc_reverse_shell`、`proc_fileless`、`proc_deleted_exe`、`proc_stale_binary`、`proc_tmp_exec` |

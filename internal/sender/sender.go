@@ -279,10 +279,11 @@ const (
 )
 
 type result struct {
-	kind   outcome
-	wait   time.Duration
-	notice string
-	err    error
+	kind    outcome
+	wait    time.Duration
+	notice  string
+	dropped []proto.DroppedEvent
+	err     error
 }
 
 // Run sends until ctx is done.
@@ -334,6 +335,9 @@ func (s *Sender) attempt(ctx context.Context, it item) time.Duration {
 	s.lastNotice = r.notice
 	switch r.kind {
 	case accepted:
+		for _, d := range r.dropped {
+			s.o.Log.Warn("event dropped by the server", "seq", it.p.Seq(), "id", d.ID, "code", d.Code)
+		}
 		s.done(it)
 		s.backoff, s.failingSince = s.o.MinBackoff, time.Time{}
 		if s.o.OnAccepted != nil {
@@ -418,7 +422,7 @@ func (s *Sender) send(ctx context.Context, p sanitize.SanitizedPayload) result {
 	case http.StatusAccepted:
 		var ack proto.IngestResponse
 		_ = json.Unmarshal(body, &ack)
-		return result{kind: accepted, notice: ack.Notice}
+		return result{kind: accepted, notice: ack.Notice, dropped: ack.DroppedEvents}
 	case http.StatusBadRequest:
 		return result{kind: drop, err: fmt.Errorf("400: %s", truncate(body))}
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict:

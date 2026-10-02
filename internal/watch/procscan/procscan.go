@@ -19,6 +19,7 @@ import (
 	"github.com/xyfu/xnux-agent/internal/procfs"
 	"github.com/xyfu/xnux-agent/internal/raw"
 	"github.com/xyfu/xnux-agent/internal/rules"
+	"github.com/xyfu/xnux-agent/internal/state"
 )
 
 const (
@@ -49,9 +50,43 @@ type Scanner struct {
 	// Interval and Jitter default to 300 s and 30 s.
 	Interval, Jitter time.Duration
 
-	reported map[int]string // pid → exe, reported once per process
 	mu       sync.Mutex
-	stale    map[string]int64 // exe → last report (unix), persisted in state.json
+	reported map[string]string // "pid:starttime" → exe, once per process, persisted
+	stale    map[string]int64  // exe → last report (unix), persisted in state.json
+}
+
+func (s *Scanner) bootID() string {
+	b, _ := os.ReadFile(filepath.Join(s.Root, "proc/sys/kernel/random/boot_id"))
+	return strings.TrimSpace(string(b))
+}
+
+// SetReported restores the processes already reported, unless the host
+// has rebooted since.
+func (s *Scanner) SetReported(r *state.ProcReported) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reported = map[string]string{}
+	if r == nil || r.BootID == "" || r.BootID != s.bootID() {
+		return
+	}
+	for k, v := range r.Procs {
+		s.reported[k] = v
+	}
+}
+
+// Reported returns the processes already reported, to persist.
+func (s *Scanner) Reported() *state.ProcReported {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.bootID()
+	if id == "" || len(s.reported) == 0 {
+		return nil
+	}
+	out := &state.ProcReported{BootID: id, Procs: make(map[string]string, len(s.reported))}
+	for k, v := range s.reported {
+		out.Procs[k] = v
+	}
+	return out
 }
 
 // SetStale restores proc_stale_binary report times from state.json.
@@ -141,23 +176,32 @@ func hasPrefixAny(p string, dirs []string) bool {
 
 // Scan runs one pass and returns the new findings.
 func (s *Scanner) Scan() []raw.Record {
+	s.mu.Lock()
 	if s.reported == nil {
-		s.reported = map[int]string{}
+		s.reported = map[string]string{}
 	}
+	s.mu.Unlock()
 	pids, err := s.Proc.PIDs()
 	if err != nil {
 		return nil
 	}
 	now := s.now()
-	alive := make(map[int]bool, len(pids))
+	alive := make(map[string]bool, len(pids))
 	var out []raw.Record
 	for _, pid := range pids {
 		exe, err := s.Proc.Readlink(pid, "exe")
 		if err != nil || exe == "" {
 			continue // kernel thread, gone, or not ours to read
 		}
-		alive[pid] = true
-		if prev, ok := s.reported[pid]; ok && prev == exe {
+		id := strconv.Itoa(pid)
+		if st, ok := s.Proc.StartTime(pid); ok {
+			id += ":" + strconv.FormatUint(st, 10)
+		}
+		alive[id] = true
+		s.mu.Lock()
+		prev, seen := s.reported[id]
+		s.mu.Unlock()
+		if seen && prev == exe {
 			continue
 		}
 		comm := s.Proc.Comm(pid)
@@ -168,14 +212,18 @@ func (s *Scanner) Scan() []raw.Record {
 		if typ == "" {
 			continue
 		}
-		s.reported[pid] = exe
+		s.mu.Lock()
+		s.reported[id] = exe
+		s.mu.Unlock()
 		out = append(out, s.record(pid, exe, comm, typ, sev, now))
 	}
-	for pid := range s.reported {
-		if !alive[pid] {
-			delete(s.reported, pid)
+	s.mu.Lock()
+	for id := range s.reported {
+		if !alive[id] {
+			delete(s.reported, id)
 		}
 	}
+	s.mu.Unlock()
 	return out
 }
 
@@ -230,11 +278,11 @@ func (s *Scanner) record(pid int, exe, comm, typ, sev string, now time.Time) raw
 			d["ppid_comm"] = pc
 		}
 	}
+	// The key is the binary's path for every type: the server merges by it
+	// (decision L20; reverse shells used comm:pid and dropped exe).
 	key := strings.TrimSuffix(exe, deleted)
 	if typ == proto.EventProcReverseShell {
 		d["remote"] = s.reverseShell(pid)
-		delete(d, "exe")
-		key = comm + ":" + strconv.Itoa(pid)
 	}
 	return raw.Record{Kind: typ, TS: now, Key: key, Severity: sev, Data: d}
 }

@@ -98,3 +98,26 @@ func TestSplitWhenTooLarge(t *testing.T) {
 		t.Fatalf("lost metrics: %d", metrics)
 	}
 }
+
+// The failed-unit list goes once with the next payload; an empty list is
+// sent as [] (no unit failed), not omitted.
+func TestServicesFailed(t *testing.T) {
+	b := newBatcher(t, Options{})
+	b.SetServicesFailed(nil)
+	if !b.Pending() {
+		t.Fatal("an empty list must be pending")
+	}
+	out, _ := b.Flush(false)
+	if len(out) != 1 || !strings.Contains(string(out[0].Bytes()), `"services_failed":[]`) {
+		t.Fatalf("empty list: %s", out[0].Bytes())
+	}
+	b.SetServicesFailed([]string{"a.service"})
+	out, _ = b.Flush(false)
+	if p := decode(t, out[0]); len(p.ServicesFailed) != 1 || p.ServicesFailed[0] != "a.service" {
+		t.Fatalf("list: %+v", p.ServicesFailed)
+	}
+	hb, _ := b.Flush(true)
+	if strings.Contains(string(hb[0].Bytes()), "services_failed") {
+		t.Fatal("list sent twice")
+	}
+}

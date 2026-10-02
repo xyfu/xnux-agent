@@ -34,6 +34,7 @@ type Batcher struct {
 	events  []proto.Event
 	host    *proto.Host
 	summary *proto.SecuritySummary
+	failed  []string // non-nil when the failed-unit list goes with the next payload
 }
 
 func New(o Options) *Batcher {
@@ -64,9 +65,15 @@ func (b *Batcher) SetHost(h proto.Host) { b.host = &h }
 // SetSecuritySummary attaches the hourly security summary to the next payload.
 func (b *Batcher) SetSecuritySummary(s *proto.SecuritySummary) { b.summary = s }
 
+// SetServicesFailed attaches the list of failed units to the next payload;
+// an empty list is sent as such.
+func (b *Batcher) SetServicesFailed(units []string) {
+	b.failed = append(make([]string, 0, len(units)), units...)
+}
+
 // Pending reports whether anything is waiting to be flushed.
 func (b *Batcher) Pending() bool {
-	return len(b.metrics) > 0 || len(b.events) > 0 || b.host != nil || b.summary != nil
+	return len(b.metrics) > 0 || len(b.events) > 0 || b.host != nil || b.summary != nil || b.failed != nil
 }
 
 // Flush builds, seals and returns the pending payload, split into parts if
@@ -88,11 +95,12 @@ func (b *Batcher) Flush(heartbeat bool) ([]sanitize.SanitizedPayload, error) {
 		Redactions:   map[string]int{},
 
 		SecuritySummary: b.summary,
+		ServicesFailed:  b.failed,
 	}
 	if b.o.Diag != nil {
 		p.Diag = b.o.Diag()
 	}
-	b.metrics, b.events, b.host, b.summary = nil, nil, nil, nil
+	b.metrics, b.events, b.host, b.summary, b.failed = nil, nil, nil, nil, nil
 
 	sp, err := b.o.Barrier.Seal(p)
 	if err != nil {

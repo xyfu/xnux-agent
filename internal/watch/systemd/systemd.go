@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -51,7 +52,12 @@ type Watcher struct {
 	Address string
 	Ignore  []string
 	Out     chan<- raw.Record
-	Now     func() time.Time
+	// Failed, when set, receives the sorted names of the units that are
+	// down right now (C-AG-SERVICE-STATE): on every (re)connect and on every
+	// change. A unit is down from a reported failure until it recovers, is
+	// stopped or reset (inactive), or its start succeeds again.
+	Failed chan<- []string
+	Now    func() time.Time
 	// LogTail returns the unit's recent log lines; nil runs journalctl.
 	LogTail      func(ctx context.Context, unit string) []string
 	RecoverAfter time.Duration
@@ -79,6 +85,7 @@ type watch struct {
 	units   map[dbus.ObjectPath]*unitState
 	byName  map[string]*unitState
 	recover chan dbus.ObjectPath
+	sent    []string // the last list sent on Failed; nil before the first
 }
 
 func (w *Watcher) now() time.Time {
@@ -123,11 +130,18 @@ func (w *Watcher) Run(ctx context.Context) error {
 	if err := mgr.CallWithContext(ctx, managerIf+".ListUnits", 0).Store(&listed); err != nil {
 		return err
 	}
+	now := w.now()
 	for _, u := range listed {
 		if x.wanted(u.Name) {
-			x.add(u.Path, u.Name, u.ActiveState, u.SubState)
+			st := x.add(u.Path, u.Name, u.ActiveState, u.SubState)
+			// Down before the agent (re)started: no event, but it is listed,
+			// and its recovery is reported (decision L19).
+			if u.ActiveState == "failed" || u.SubState == "auto-restart" {
+				st.down, st.downAt = true, now
+			}
 		}
 	}
+	x.publish()
 
 	for {
 		select {
@@ -233,6 +247,35 @@ func (x *watch) propertiesChanged(s *dbus.Signal) {
 	} else if active != "active" {
 		u.activeAt = time.Time{}
 	}
+	// Stopped, reset or a oneshot that finished: no longer down. A unit
+	// waiting to restart is "activating", never "inactive".
+	if active == "inactive" && prevActive != "inactive" && u.down {
+		u.down = false
+		x.publish()
+	}
+}
+
+// publish sends the current list of down units when it changed (or was
+// never sent on this connection).
+func (x *watch) publish() {
+	if x.w.Failed == nil {
+		return
+	}
+	list := []string{}
+	for _, u := range x.byName {
+		if u.down {
+			list = append(list, u.name)
+		}
+	}
+	slices.Sort(list)
+	if x.sent != nil && slices.Equal(list, x.sent) {
+		return
+	}
+	x.sent = list
+	select {
+	case x.w.Failed <- slices.Clone(list):
+	case <-x.ctx.Done():
+	}
 }
 
 func (x *watch) jobRemoved(s *dbus.Signal) {
@@ -250,24 +293,38 @@ func (x *watch) jobRemoved(s *dbus.Signal) {
 	now := x.w.now()
 	if u := x.byName[name]; u != nil && !u.down {
 		u.down, u.downAt = true, now
+		x.publish()
 	}
-	x.send(raw.Record{Kind: proto.EventServiceStartFailed, TS: now, Key: name,
-		Data: map[string]any{"unit": name, "job_result": result, "log_tail": x.tail(name)}})
+	d := map[string]any{"unit": name, "job_result": result}
+	if tail := x.tail(name); len(tail) > 0 {
+		d["log_tail"] = tail
+	}
+	x.send(raw.Record{Kind: proto.EventServiceStartFailed, TS: now, Key: name, Data: d})
 }
 
+// results lists the service results the schema accepts; anything else is
+// reported as "unknown".
+var results = map[string]bool{"exit-code": true, "signal": true, "core-dump": true, "timeout": true, "oom-kill": true,
+	"watchdog": true, "start-limit-hit": true, "protocol": true, "resources": true}
+
 func (x *watch) failed(p dbus.ObjectPath, u *unitState, restarting bool, now time.Time) {
-	if !u.down {
-		u.down, u.downAt = true, now
-	}
-	d := map[string]any{"unit": u.name, "restarting": restarting, "n_restarts": 0}
 	props := map[string]dbus.Variant{}
 	_ = x.conn.Object(dest, p).CallWithContext(x.ctx, propsIf+".GetAll", 0, serviceIf).Store(&props)
+	result := ""
 	if v, ok := props["Result"]; ok {
-		d["result"], _ = v.Value().(string)
+		result, _ = v.Value().(string)
 	}
-	if d["result"] == nil || d["result"] == "" {
-		d["result"] = "unknown"
+	if restarting && result == "success" {
+		return // Restart=always after a clean exit: not a failure
 	}
+	if !results[result] {
+		result = "unknown"
+	}
+	if !u.down {
+		u.down, u.downAt = true, now
+		x.publish()
+	}
+	d := map[string]any{"unit": u.name, "restarting": restarting, "n_restarts": 0, "result": result}
 	if n, ok := uintProp(props, "NRestarts"); ok {
 		d["n_restarts"] = n
 	}
@@ -284,7 +341,9 @@ func (x *watch) failed(p dbus.ObjectPath, u *unitState, restarting bool, now tim
 	if peak, ok := uintProp(props, "MemoryPeak"); ok && peak != ^uint64(0) {
 		d["memory_peak_mb"] = int64(peak >> 20)
 	}
-	d["log_tail"] = x.tail(u.name)
+	if tail := x.tail(u.name); len(tail) > 0 {
+		d["log_tail"] = tail
+	}
 	x.send(raw.Record{Kind: proto.EventServiceFailed, TS: now, Key: u.name, Data: d})
 }
 
@@ -351,6 +410,7 @@ func (x *watch) checkRecovered(p dbus.ObjectPath) {
 	u.down = false
 	x.send(raw.Record{Kind: proto.EventServiceRecovered, TS: now, Key: u.name,
 		Data: map[string]any{"unit": u.name, "down_seconds": int64(u.activeAt.Sub(u.downAt).Seconds())}})
+	x.publish()
 }
 
 func (x *watch) send(r raw.Record) {

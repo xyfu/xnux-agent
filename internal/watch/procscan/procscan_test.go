@@ -115,6 +115,10 @@ func TestReverseShell(t *testing.T) {
 	if !strings.Contains(r.Data["cmdline"].(string), "bash") {
 		t.Fatalf("cmdline: %+v", r.Data)
 	}
+	// The binary's path is kept and is the key (decision L20).
+	if exe, _ := r.Data["exe"].(string); exe == "" || !strings.HasSuffix(exe, "bash") || r.Key != exe {
+		t.Fatalf("exe %q, key %q", r.Data["exe"], r.Key)
+	}
 	// Reported once per process.
 	if again := find(s.Scan(), cmd.Process.Pid); again != nil {
 		t.Fatal("reported twice")
@@ -174,6 +178,24 @@ func TestTmpAndDeleted(t *testing.T) {
 		if r.Kind == "proc_stale_binary" {
 			t.Errorf("stale binary reported again within a day: %+v", r)
 		}
+	}
+
+	// After a restart the same running processes are not reported again;
+	// after a reboot (another boot ID) they are.
+	s4 := scanner()
+	s4.SetReported(s.Reported())
+	if r := find(s4.Scan(), inTmp.Process.Pid); r != nil {
+		t.Errorf("reported again after a restart: %+v", r)
+	}
+	if rep := s.Reported(); rep != nil {
+		rep.BootID = "another-boot"
+		s5 := scanner()
+		s5.SetReported(rep)
+		if r := find(s5.Scan(), inTmp.Process.Pid); r == nil {
+			t.Error("not reported after a reboot")
+		}
+	} else if _, err := os.Stat("/proc/sys/kernel/random/boot_id"); err == nil {
+		t.Error("nothing to persist")
 	}
 
 	// Whitelisted by comm.
