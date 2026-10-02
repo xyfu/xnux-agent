@@ -150,7 +150,9 @@ if [ "$ROLLBACK" = 1 ]; then
 	exit 0
 fi
 if [ "$UPGRADE" = 1 ]; then
-	[ -x "$BIN" ] && [ -f "$CONF" ] || die "--upgrade: no installed agent here (install without --upgrade first)"
+	if [ ! -x "$BIN" ] || [ ! -f "$CONF" ]; then
+		die "--upgrade: no installed agent here (install without --upgrade first)"
+	fi
 	[ "$DRY_RUN" = 0 ] || die "--upgrade and --dry-run do not go together"
 fi
 
