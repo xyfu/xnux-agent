@@ -49,7 +49,16 @@ Any regular user can run this. The output is exactly the JSON the agent sends on
 
 ## Upgrading
 
-Re-run the install command (you can drop `--token`): it replaces the binary and restarts the service, keeping `/etc/xnux/agent.yaml` (the old file is backed up as `agent.yaml.bak`). The agent has **no auto-update**, and no channel for receiving remote commands of any kind.
+The console's "Update agent" panel gives the exact commands for your server. By hand:
+
+```sh
+curl -fsSL -o /tmp/xnux-install.sh https://github.com/xyfu/xnux-agent/releases/download/vX.Y.Z/install.sh
+sha256sum /tmp/xnux-install.sh          # compare with the release's SHA256SUMS
+sudo sh /tmp/xnux-install.sh --upgrade --version vX.Y.Z
+xnux-agent version
+```
+
+`--upgrade` asks nothing and changes nothing but the binary: `/etc/xnux/agent.yaml` (with its token), the state and spool in `/var/lib/xnux` and the systemd unit stay as they are. The previous binary is kept as `/usr/local/bin/xnux-agent.prev`; if the new one does not start, it is put back and the script exits with an error. `sudo sh /tmp/xnux-install.sh --rollback` puts the previous version back by hand. With `cosign` installed, the script also checks the binary's signature. Re-running the plain install command also upgrades (it rewrites the unit file). The agent **never updates itself** and has no channel for remote commands.
 
 ## Uninstalling
 

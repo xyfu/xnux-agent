@@ -1,0 +1,19 @@
+{
+  "level": "recommended",
+  "highlights": {
+    "zh-Hans": [
+      "上报当前失败的服务清单，服务恢复后告警能自动结束（包括探针重启期间恢复的服务）",
+      "Restart=always 服务的正常退出不再报成崩溃",
+      "反弹 Shell 按可执行文件合并；磁盘设备名（如 dm-0）完整",
+      "超长命令不再导致整包被服务端拒收",
+      "安装脚本支持 --upgrade 与 --rollback"
+    ],
+    "en": [
+      "Reports the services that are failed right now, so their alerts end on recovery (also across agent restarts)",
+      "A clean exit of a Restart=always service is no longer reported as a crash",
+      "Reverse shells merge by executable; disk device names such as dm-0 stay whole",
+      "A very long command no longer gets the whole upload refused",
+      "The installer supports --upgrade and --rollback"
+    ]
+  }
+}

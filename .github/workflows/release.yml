@@ -32,6 +32,16 @@ jobs:
       - name: build (reproducible, static)
         run: make dist VERSION="${VERSION}" COMMIT="$(git rev-parse --short HEAD)"
 
+      # The release manifest (spec v1.1 delta 12.6): every release with
+      # notes in releases/notes, this one with its downloads. The server
+      # reads it from releases/latest/download/manifest.json.
+      - name: manifest
+        env:
+          XNUX_MANIFEST_KEY: ${{ secrets.XNUX_MANIFEST_KEY }}
+        run: |
+          go run ./scripts/manifest build -version "${VERSION}" -bin bin -out bin/manifest.json
+          go run ./scripts/manifest sign -in bin/manifest.json
+
       - name: sign
         run: |
           cd bin

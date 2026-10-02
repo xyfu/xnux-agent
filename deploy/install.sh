@@ -6,8 +6,11 @@
 # Downloads the static xnux-agent for this machine's architecture, refuses
 # to install it unless its sha256 matches the release's SHA256SUMS, writes
 # /etc/xnux/agent.yaml and a hardened systemd unit, and starts the agent.
-# Re-running it upgrades the binary and keeps the existing configuration.
-# There is no self-update: upgrades only ever happen by running this again.
+# Re-running it upgrades the binary and keeps the existing configuration;
+# --upgrade does so without asking anything and puts the previous binary
+# back if the new one does not start; --rollback restores that previous
+# binary (C-AG-UPGRADE-SCRIPT). There is no self-update: upgrades only ever
+# happen by running this.
 set -eu
 
 REPO="xyfu/xnux-agent"
@@ -27,6 +30,8 @@ LEAST_PRIV=0
 NO_START=0
 ADD_USER=""
 PROMPT=1
+UPGRADE=0
+ROLLBACK=0
 CLI=/usr/local/bin/xnux
 
 usage() {
@@ -53,6 +58,10 @@ Usage: install.sh [--token TOKEN] [options]
   --add-user USER      let USER run the xnux CLI without sudo (group "xnux");
                        by default the script asks about the user who ran sudo
   --no-prompt          ask nothing
+  --upgrade            upgrade an installed agent: keep its configuration, token,
+                       state and unit file, keep the old binary as xnux-agent.prev
+                       and put it back if the new one does not start
+  --rollback           put xnux-agent.prev back and restart
   -h, --help           this help
 EOF
 }
@@ -82,6 +91,8 @@ while [ $# -gt 0 ]; do
 	--add-user) ADD_USER="${2:-}"; shift 2 ;;
 	--add-user=*) ADD_USER="${1#*=}"; shift ;;
 	--no-prompt) PROMPT=0; shift ;;
+	--upgrade) UPGRADE=1; PROMPT=0; shift ;;
+	--rollback) ROLLBACK=1; shift ;;
 	-h | --help) usage; exit 0 ;;
 	*) usage >&2; die "unknown option: $1" ;;
 	esac
@@ -115,6 +126,32 @@ fi
 if [ -n "$ADD_USER" ]; then
 	printf '%s' "$ADD_USER" | grep -Eq '^[a-z_][a-z0-9_.-]*[$]?$' || die "--add-user: not a user name"
 	id "$ADD_USER" >/dev/null 2>&1 || die "--add-user: no user $ADD_USER"
+fi
+
+restart_service() {
+	[ -d /run/systemd/system ] || return 0
+	systemctl restart xnux-agent.service
+	sleep 2
+	systemctl is-active --quiet xnux-agent.service
+}
+
+if [ "$ROLLBACK" = 1 ]; then
+	[ "$(id -u)" = 0 ] || die "run as root (sudo sh install.sh --rollback)"
+	[ -x "$BIN.prev" ] || die "no previous version to go back to ($BIN.prev)"
+	install -m 0755 "$BIN.prev" "$BIN.new"
+	mv -f "$BIN.new" "$BIN"
+	say "restored $BIN ($("$BIN" version))"
+	if [ ! -d /run/systemd/system ]; then
+		say "restart the agent under your init system to run it"
+		exit 0
+	fi
+	restart_service || die "xnux-agent did not start; see: journalctl -u xnux-agent"
+	say "xnux-agent is running"
+	exit 0
+fi
+if [ "$UPGRADE" = 1 ]; then
+	[ -x "$BIN" ] && [ -f "$CONF" ] || die "--upgrade: no installed agent here (install without --upgrade first)"
+	[ "$DRY_RUN" = 0 ] || die "--upgrade and --dry-run do not go together"
 fi
 
 if command -v curl >/dev/null 2>&1; then
@@ -159,6 +196,18 @@ WANT="$(awk -v f="$NAME" '$2 == f || $2 == "*" f { print $1 }' "$TMP/SHA256SUMS"
 GOT="$(sha256 "$TMP/$NAME")"
 [ "$WANT" = "$GOT" ] || die "sha256 mismatch for $NAME: expected $WANT, got $GOT — not installing"
 say "sha256 verified: $GOT"
+# With cosign at hand, also check the release workflow's signature.
+if command -v cosign >/dev/null 2>&1; then
+	if fetch "$BASE_URL/$NAME.sig" "$TMP/$NAME.sig" && fetch "$BASE_URL/$NAME.pem" "$TMP/$NAME.pem"; then
+		cosign verify-blob --signature "$TMP/$NAME.sig" --certificate "$TMP/$NAME.pem" \
+			--certificate-identity-regexp "^https://github.com/$REPO/" \
+			--certificate-oidc-issuer https://token.actions.githubusercontent.com "$TMP/$NAME" >/dev/null 2>&1 ||
+			die "cosign signature check failed for $NAME — not installing"
+		say "cosign signature verified"
+	else
+		say "no cosign signature at $BASE_URL; skipped that check"
+	fi
+fi
 chmod 0755 "$TMP/$NAME"
 "$TMP/$NAME" version >/dev/null 2>&1 || die "the downloaded binary does not run on this machine"
 
@@ -191,6 +240,10 @@ if [ "$DRY_RUN" = 1 ]; then
 fi
 
 install -d -m 0755 "$(dirname "$BIN")"
+if [ -x "$BIN" ]; then
+	cp -p "$BIN" "$BIN.prev" # for --rollback
+	PREV_VERSION="$("$BIN" version 2>/dev/null || echo unknown)"
+fi
 install -m 0755 "$TMP/$NAME" "$BIN.new"
 mv -f "$BIN.new" "$BIN"
 ln -sf "$BIN" "$CLI"
@@ -249,6 +302,19 @@ if [ ! -d /run/systemd/system ]; then
 	say "systemd is not running here: service-crash monitoring stays off, and the agent is not started for you."
 	say "run it under your init system, e.g.:  $BIN run --config $CONF"
 	exit 0
+fi
+
+if [ "$UPGRADE" = 1 ] && [ -f "$UNIT" ]; then
+	# Keep the unit as installed (e.g. --least-privilege): only the binary changes.
+	if restart_service; then
+		say "upgraded from ${PREV_VERSION:-unknown} to $("$BIN" version); xnux-agent is running"
+		exit 0
+	fi
+	say "the new version did not start; putting ${PREV_VERSION:-the previous version} back"
+	install -m 0755 "$BIN.prev" "$BIN.new"
+	mv -f "$BIN.new" "$BIN"
+	restart_service || true
+	die "upgrade failed and was undone; see: journalctl -u xnux-agent"
 fi
 
 SYSTEMD_VER="$(systemctl --version 2>/dev/null | awk 'NR == 1 { print $2 + 0 }')"

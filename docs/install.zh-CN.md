@@ -49,7 +49,16 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 
 ## 升级
 
-重新执行安装命令（可以去掉 `--token`）：替换二进制并重启服务，保留 `/etc/xnux/agent.yaml`（旧文件备份为 `agent.yaml.bak`）。探针**没有自动升级**，也没有任何远程下发指令的通道。
+控制台的“更新探针”面板会给出适合这台服务器的完整命令。手动升级：
+
+```sh
+curl -fsSL -o /tmp/xnux-install.sh https://github.com/xyfu/xnux-agent/releases/download/vX.Y.Z/install.sh
+sha256sum /tmp/xnux-install.sh          # 与该版本的 SHA256SUMS 核对
+sudo sh /tmp/xnux-install.sh --upgrade --version vX.Y.Z
+xnux-agent version
+```
+
+`--upgrade` 不询问任何问题，只替换二进制：`/etc/xnux/agent.yaml`（含 token）、`/var/lib/xnux` 中的状态与 spool、systemd 单元都保持原样。旧二进制保留为 `/usr/local/bin/xnux-agent.prev`；新版本没能启动时会自动换回旧版本并报错退出。手动回退用 `sudo sh /tmp/xnux-install.sh --rollback`。装有 `cosign` 时，脚本还会校验二进制的签名。直接重新执行安装命令同样可以升级（会重写 systemd 单元）。探针**没有自动升级**，也没有任何远程下发指令的通道。
 
 ## 卸载
 

@@ -1,0 +1,7 @@
+{
+  "level": "recommended",
+  "highlights": {
+    "zh-Hans": ["风险扫描上报 SSH 爆破的 root 尝试次数与 24 小时来源数", "监听范围只报“所有网卡 / 公网地址”，不报地址本身"],
+    "en": ["The risk scan reports root attempts and 24-hour sources of SSH brute force", "Listening scope is reported as all interfaces or a public address, never the address"]
+  }
+}
