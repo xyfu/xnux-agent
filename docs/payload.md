@@ -29,7 +29,7 @@ TLS ≥ 1.2 with certificate verification (there is no "skip verification" optio
 | `part` | Part number when an oversized payload is split |
 | `sent_at` | Agent local time (Unix seconds) |
 | `agent_version` | Agent version |
-| `machine_fp` | First 16 characters of sha256(machine-id + token), used to detect "the same token copied to multiple machines" |
+| `machine_fp` | First 16 characters of sha256(machine-id + token), used to detect "the same agent key copied to multiple machines" |
 | `host` | Host information: included at startup, every 6 hours, and on change |
 | `metrics[]` | Resource metrics, in ascending time order |
 | `events[]` | Incident context events |
@@ -120,5 +120,5 @@ Not collected: IP addresses, MAC addresses, network interface list, user list, i
 ## How the server treats this data
 
 - After decompression and before any processing, the ingest gateway computes sha256 over the raw bytes and writes it, together with the original content, to an audit table (kept for 7 days). The [console's transparency audit page](../README.md#verify-it-yourself) shows exactly this original content.
-- Access logs record no request bodies, no IPs and no tokens; the source IP is written only to the audit table. When relayed through the [Worker](relay.md), the server sees only Cloudflare's address.
-- Deleting a server in the console immediately revokes its token, and a background job hard-deletes all of its data.
+- Access logs record no request bodies, no IPs and no agent keys; the source IP is written only to the audit table. When relayed through the [Worker](relay.md), the server sees only Cloudflare's address.
+- Deleting a server in the console immediately revokes its agent key, and a background job hard-deletes all of its data.

@@ -358,7 +358,7 @@ func (s *Sender) attempt(ctx context.Context, it item) time.Duration {
 		s.replace(it, a, b)
 		return 0
 	case pause:
-		s.o.Log.Warn("server refused the agent token; sending paused, collection continues", "err", r.err, "retry_in", s.o.PauseRetry)
+		s.o.Log.Warn("Xnux refused the agent key; sending paused, collection continues", "err", r.err, "retry_in", s.o.PauseRetry)
 		s.failing()
 		return s.o.PauseRetry
 	case retryAfter:

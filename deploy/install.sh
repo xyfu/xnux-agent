@@ -109,7 +109,7 @@ esac
 
 # Values end up in YAML and a unit file: accept only what they can be.
 if [ -n "$TOKEN" ]; then
-	printf '%s' "$TOKEN" | grep -Eq '^xat_[A-Za-z0-9_-]{16,128}$' || die "that does not look like an agent token (xat_…)"
+	printf '%s' "$TOKEN" | grep -Eq '^xat_[A-Za-z0-9_-]{16,128}$' || die "that does not look like an agent key (xat_…)"
 fi
 if [ -n "$ENDPOINT" ]; then
 	printf '%s' "$ENDPOINT" | grep -Eq '^https?://[A-Za-z0-9.:%_~/[-]+$' || die "--endpoint must be an http(s) URL"
@@ -222,7 +222,7 @@ write_config() { # $1 = path
 		if [ -n "$TOKEN" ]; then
 			echo "token: \"$TOKEN\""
 		else
-			echo "# No token: standalone, nothing is uploaded. Connect with: sudo xnux connect --token xat_…"
+			echo "# No agent key: standalone, nothing is uploaded. Connect with: sudo xnux connect --token xat_…"
 		fi
 		echo "endpoint: \"${ENDPOINT:-https://ingest.xnux.net}\""
 		if [ "$HIDE_HOSTNAME" = 1 ]; then echo "hide_hostname: true"; fi
@@ -309,14 +309,14 @@ fi
 if [ "$UPGRADE" = 1 ] && [ -f "$UNIT" ]; then
 	# Keep the unit as installed (e.g. --least-privilege): only the binary changes.
 	if restart_service; then
-		say "upgraded from ${PREV_VERSION:-unknown} to $("$BIN" version); xnux-agent is running"
+		say "updated from ${PREV_VERSION:-unknown} to $("$BIN" version); xnux-agent is running"
 		exit 0
 	fi
 	say "the new version did not start; putting ${PREV_VERSION:-the previous version} back"
 	install -m 0755 "$BIN.prev" "$BIN.new"
 	mv -f "$BIN.new" "$BIN"
 	restart_service || true
-	die "upgrade failed and was undone; see: journalctl -u xnux-agent"
+	die "the update failed and was undone; see: journalctl -u xnux-agent"
 fi
 
 SYSTEMD_VER="$(systemctl --version 2>/dev/null | awk 'NR == 1 { print $2 + 0 }')"

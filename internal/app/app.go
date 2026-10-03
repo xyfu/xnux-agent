@@ -785,7 +785,7 @@ func check(ctx context.Context, o Options, cfg *config.Config, s *collect.Sample
 	info("procscan", enabled(col.Procscan, present(exists("proc/self"))))
 
 	if cfg.Standalone() {
-		info("endpoint", "standalone: no token, nothing is sent (xnux connect to link)")
+		info("endpoint", "standalone: no agent key, nothing is sent (xnux connect to link)")
 		if !ok {
 			return errors.New("check failed")
 		}

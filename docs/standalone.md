@@ -2,7 +2,7 @@
 
 English | [简体中文](standalone.zh-CN.md)
 
-Installed without a token, the agent runs in **standalone mode**: it continuously records metrics and the incident context of crashes, OOMs and intrusions on the machine, and after something goes wrong you inspect it with the `xnux` command. It makes no network connections, requires no sign-up, and is free.
+Installed without an agent key, the agent runs in **standalone mode**: it continuously records metrics and the incident context of crashes, OOMs and intrusions on the machine, and after something goes wrong you inspect it with the `xnux` command. It makes no network connections, requires no sign-up, and is free.
 
 ![xnux top](img/xnux-top.png)
 
@@ -28,7 +28,7 @@ Same binary and same install script as connected mode, just without `--token`. T
 | `xnux status` | Collectors, mode (standalone / connected), storage usage, breakdown of health score deductions |
 | `xnux payload [--last\|--next]` | What was last reported / what will be reported next |
 | `xnux connect --token xat_… [--endpoint URL]` | Switch to connected mode (requires root) |
-| `xnux disconnect` | Switch back to standalone mode and delete the token (requires root) |
+| `xnux disconnect` | Switch back to standalone mode and delete the agent key (requires root) |
 
 All commands support `--json`. When the terminal is narrower than 80 columns, `xnux top` automatically uses a compact layout; when `LANG` contains `zh`, health score explanations are in Chinese.
 
@@ -53,15 +53,15 @@ Power-loss safety: each event is fsynced; a half-written last line gets a newlin
 | Single server | Many servers in one place |
 | Metrics for 24 hours (1-minute resolution), events for 30 days | Long-term history and charts |
 | Inspect manually, **no alerts of any kind** | Alert notifications (free tier includes 2 servers) |
-| Raw incident context data | AI root-cause analysis, app fixes, uptime checks, status pages, teams |
+| Raw incident context data | AI analysis, app fixes, uptime checks, status pages, teams |
 
 When you want alerts:
 
 ```sh
-sudo xnux connect --token xat_…     # the token from "Add server" in the console
+sudo xnux connect --token xat_…     # the agent key from "Add server" in the console
 ```
 
-`connect` writes the configuration and then notifies the daemon over the socket to reload **without restarting**: the reporting channel is set up on the spot, the first batch of data arrives within seconds, and local recording is not interrupted. `xnux disconnect` does the reverse: it deletes the token, stops reporting, and keeps recording locally.
+`connect` writes the configuration and then notifies the daemon over the socket to reload **without restarting**: the reporting channel is set up on the spot, the first batch of data arrives within seconds, and local recording is not interrupted. `xnux disconnect` does the reverse: it deletes the agent key, stops reporting, and keeps recording locally.
 
 ## Verify that it really stays offline
 

@@ -2,7 +2,7 @@
 
 [English](standalone.md) | 简体中文
 
-探针不带 token 安装时是**独立模式**：它在本机持续记录指标和崩溃、OOM、入侵现场，出事后用 `xnux` 命令查看。不建立任何网络连接，不需要注册，免费。
+探针不带接入密钥安装时是**独立模式**：它在本机持续记录指标和崩溃、OOM、入侵现场，出事后用 `xnux` 命令查看。不建立任何网络连接，不需要注册，免费。
 
 ![xnux top](img/xnux-top.png)
 
@@ -28,7 +28,7 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 | `xnux status` | 采集器、模式（独立 / 上报）、存储占用、健康度扣分明细 |
 | `xnux payload [--last\|--next]` | 最近一次上报 / 下一次将要上报的内容 |
 | `xnux connect --token xat_… [--endpoint URL]` | 切到上报模式（需 root） |
-| `xnux disconnect` | 切回独立模式，删除 token（需 root） |
+| `xnux disconnect` | 切回独立模式，删除接入密钥（需 root） |
 
 所有命令都支持 `--json`。终端宽度小于 80 列时 `xnux top` 自动精简布局；`LANG` 含 `zh` 时健康度说明为中文。
 
@@ -53,15 +53,15 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 | 单台服务器 | 多台集中查看 |
 | 指标 24 小时（1 分钟精度），事件 30 天 | 长期历史与图表 |
 | 手动查看，**不发任何告警** | 告警推送（免费档含 2 台） |
-| 原始现场数据 | AI 归因、App 修复、拨测、状态页、团队 |
+| 原始现场数据 | AI 分析、App 修复、拨测、状态页、团队 |
 
 想要告警时：
 
 ```sh
-sudo xnux connect --token xat_…     # 控制台「添加服务器」里的 token
+sudo xnux connect --token xat_…     # 控制台「添加服务器」里的接入密钥
 ```
 
-`connect` 写入配置后通过 Socket 通知守护进程**不重启**地重载：上报通道当场建立，首批数据在几秒内送达，本地记录不中断。`xnux disconnect` 反过来：删除 token，停止上报，继续本地记录。
+`connect` 写入配置后通过 Socket 通知守护进程**不重启**地重载：上报通道当场建立，首批数据在几秒内送达，本地记录不中断。`xnux disconnect` 反过来：删除接入密钥，停止上报，继续本地记录。
 
 ## 验证它确实不联网
 

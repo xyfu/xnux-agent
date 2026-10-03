@@ -6,7 +6,7 @@
 
 ## 一行安装
 
-不带 `--token` 即为本地[黑匣子](standalone.zh-CN.md)（独立模式，不联网）；要上报到 Xnux，在控制台「服务器 → 添加服务器」里复制安装命令，它已经带好 token 和上报地址：
+不带 `--token` 即为本地[黑匣子](standalone.zh-CN.md)（独立模式，不联网）；要上报到 Xnux，在控制台「服务器 → 添加服务器」里复制安装命令，它已经带好接入密钥和上报地址：
 
 ```sh
 curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.sh | sudo sh -s -- --token xat_…
@@ -27,7 +27,7 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 
 | 参数 | 作用 |
 | --- | --- |
-| `--token xat_…` | 控制台生成的探针 token。不带则为独立模式（只在本机记录）；升级时可省略，保留原配置 |
+| `--token xat_…` | 控制台生成的接入密钥。不带则为独立模式（只在本机记录）；更新时可省略，保留原配置 |
 | `--endpoint URL` | 上报地址：服务端，或你的 [Cloudflare Worker](relay.zh-CN.md)。默认 `https://ingest.xnux.net` |
 | `--version vX.Y.Z` | 安装指定版本（默认最新） |
 | `--base-url URL` | 从这里下载二进制（Release 文件的镜像），而不是 GitHub Releases |
@@ -47,9 +47,9 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 
 普通用户即可运行。输出就是探针每次上报的 JSON（已经过脱敏，替换符红底高亮），见 [payload.zh-CN.md](payload.zh-CN.md)、[redaction.zh-CN.md](redaction.zh-CN.md)。
 
-## 升级
+## 更新
 
-控制台的“更新探针”面板会给出适合这台服务器的完整命令。手动升级：
+控制台的“更新探针”面板会给出适合这台服务器的完整命令。手动更新：
 
 ```sh
 curl -fsSL -o /tmp/xnux-install.sh https://github.com/xyfu/xnux-agent/releases/download/vX.Y.Z/install.sh
@@ -58,7 +58,7 @@ sudo sh /tmp/xnux-install.sh --upgrade --version vX.Y.Z
 xnux-agent version
 ```
 
-`--upgrade` 不询问任何问题，只替换二进制：`/etc/xnux/agent.yaml`（含 token）、`/var/lib/xnux` 中的状态与 spool、systemd 单元都保持原样。旧二进制保留为 `/usr/local/bin/xnux-agent.prev`；新版本没能启动时会自动换回旧版本并报错退出。手动回退用 `sudo sh /tmp/xnux-install.sh --rollback`。装有 `cosign` 时，脚本还会校验二进制的签名。直接重新执行安装命令同样可以升级（会重写 systemd 单元）。探针**没有自动升级**，也没有任何远程下发指令的通道。
+`--upgrade` 不询问任何问题，只替换二进制：`/etc/xnux/agent.yaml`（含接入密钥）、`/var/lib/xnux` 中的状态与 spool、systemd 单元都保持原样。旧二进制保留为 `/usr/local/bin/xnux-agent.prev`；新版本没能启动时会自动换回旧版本并报错退出。手动回退用 `sudo sh /tmp/xnux-install.sh --rollback`。装有 `cosign` 时，脚本还会校验二进制的签名。直接重新执行安装命令同样可以更新（会重写 systemd 单元）。探针**不会自动更新**，也没有任何远程下发指令的通道。
 
 ## 卸载
 
@@ -67,7 +67,7 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/uninstall
 curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/uninstall.sh | sudo sh -s -- --purge # 全部删除（含本地事件与指标、xnux 用户和组）
 ```
 
-卸载后在控制台删除这台服务器，服务端会吊销 token 并硬删除它的全部数据。
+卸载后在控制台删除这台服务器，Xnux 会作废它的接入密钥并硬删除它的全部数据。
 
 ## 没有 systemd 的系统
 
@@ -81,7 +81,7 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/uninstall
 
 ## 已验证的发行版
 
-本仓库 CI 的 `install` 任务在 Ubuntu 20.04 / 22.04 / 24.04、Debian 12 / 13、Rocky Linux 9、Alpine 3.20 上跑 [scripts/install-smoke.sh](../scripts/install-smoke.sh)：普通用户 dry-run 不安装不外发，篡改的二进制被拒。完整安装流程（安装、首条上报、升级保留配置、最小权限、`uninstall --purge`）在 Xnux 服务的 CI 中对每个发行版的 systemd 容器验证。
+本仓库 CI 的 `install` 任务在 Ubuntu 20.04 / 22.04 / 24.04、Debian 12 / 13、Rocky Linux 9、Alpine 3.20 上跑 [scripts/install-smoke.sh](../scripts/install-smoke.sh)：普通用户 dry-run 不安装不外发，篡改的二进制被拒。完整安装流程（安装、首条上报、更新保留配置、最小权限、`uninstall --purge`）在 Xnux 服务的 CI 中对每个发行版的 systemd 容器验证。
 
 本地运行：
 
@@ -117,6 +117,6 @@ CI 的 `reproducible` 任务每次都用两种方式（本机与 Go 官方镜像
 | 看刚才发了什么 | `sudo cat /var/log/xnux/last_outgoing_payload.json` |
 | 与服务端收到的对比 | `sudo cat /var/log/xnux/last_outgoing_payload.sha256`，和审计台显示的哈希比较 |
 | 自检 | `sudo xnux-agent --check` |
-| 看生效配置 | `sudo xnux-agent --print-config`（token 只显示末 4 位） |
+| 看生效配置 | `sudo xnux-agent --print-config`（接入密钥只显示末 4 位） |
 
 完整配置项见 [deploy/agent.yaml.example](../deploy/agent.yaml.example)。

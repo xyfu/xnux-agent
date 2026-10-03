@@ -19,7 +19,7 @@ The reporting protocol and the redactor live in [xnux-shared](https://github.com
 
 ## Black box: works without an account
 
-Installed without a token, the agent is a local black box for one server: it keeps recording metrics (24 hours) and crash, OOM and intrusion context (30 days), so one command tells you what happened. No network connections, no alerts, free.
+Installed without an agent key, the agent is a local black box for one server: it keeps recording metrics (24 hours) and crash, OOM and intrusion context (30 days), so one command tells you what happened. No network connections, no alerts, free.
 
 ```sh
 curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.sh | sudo sh
@@ -29,7 +29,7 @@ xnux history    # 24-hour charts     xnux status                    # self-check
 
 ![xnux top](docs/img/xnux-top.png)
 
-When you want several servers in one place, alert notifications or AI root-cause analysis: `sudo xnux connect --token xat_…` switches to reporting without a restart. See [docs/standalone.md](docs/standalone.md).
+When you want several servers in one place, alert notifications or AI analysis: `sudo xnux connect --token xat_…` switches to reporting without a restart. See [docs/standalone.md](docs/standalone.md).
 
 ## Report to Xnux
 

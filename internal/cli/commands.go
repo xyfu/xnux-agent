@@ -655,7 +655,7 @@ func disconnect(args []string, env Env) error {
 		return printJSON(env.Stdout, d)
 	}
 	fmt.Fprintln(env.Stdout, "disconnected: nothing is uploaded any more; the agent keeps recording locally.")
-	fmt.Fprintln(env.Stdout, "Delete the server in the Xnux console too, so its token is revoked and its data removed.")
+	fmt.Fprintln(env.Stdout, "Delete the server in the Xnux console too, so its agent key is revoked and its data removed.")
 	return nil
 }
 

@@ -110,7 +110,7 @@ func Load(path string) (cfg *Config, warnings []string, err error) {
 		return nil, nil, err
 	}
 	if perm := fi.Mode().Perm(); perm&0o077 != 0 {
-		warnings = append(warnings, fmt.Sprintf("%s has mode %#o, want 0600: it contains the agent token", path, perm))
+		warnings = append(warnings, fmt.Sprintf("%s has mode %#o, want 0600: it contains the agent key", path, perm))
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -138,7 +138,7 @@ func Parse(b []byte) (*Config, error) {
 func (c *Config) Validate() error {
 	var errs []error
 	if c.Token != "" && !strings.HasPrefix(c.Token, "xat_") {
-		errs = append(errs, errors.New(`token must start with "xat_"`))
+		errs = append(errs, errors.New(`token: an agent key starts with "xat_"`))
 	}
 	if u, err := url.Parse(c.Endpoint); c.Endpoint == "" || err != nil || u.Host == "" {
 		errs = append(errs, errors.New("endpoint must be an absolute URL"))

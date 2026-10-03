@@ -89,7 +89,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	configPath := fs.String("config", "/etc/xnux/agent.yaml", "config file path")
 	dryRun := fs.Bool("dry-run", false, "collect and redact normally, print payloads to stdout, open no network connections")
 	once := fs.Bool("once", false, "collect one round and exit")
-	printConfig := fs.Bool("print-config", false, "print the effective config (token masked)")
+	printConfig := fs.Bool("print-config", false, "print the effective config (agent key masked)")
 	check := fs.Bool("check", false, "self-check collectors and endpoint reachability")
 	stateDir := fs.String("state-dir", "/var/lib/xnux", "state and spool directory")
 	logDir := fs.String("log-dir", "/var/log/xnux", "agent.log and mirror file directory")

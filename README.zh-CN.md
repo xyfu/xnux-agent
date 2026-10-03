@@ -19,7 +19,7 @@ The open-source agent of [Xnux](https://xnux.net): server monitoring that captur
 
 ## 黑匣子：不注册也能用
 
-不带 token 安装，探针就是一台服务器的本地黑匣子：持续记录指标（24 小时）和崩溃、OOM、入侵现场（30 天），出事后一条命令查清楚。不联网、不发告警、免费。
+不带接入密钥安装，探针就是一台服务器的本地黑匣子：持续记录指标（24 小时）和崩溃、OOM、入侵现场（30 天），出事后一条命令查清楚。不联网、不发告警、免费。
 
 ```sh
 curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.sh | sudo sh
@@ -29,7 +29,7 @@ xnux history    # 24 小时曲线  xnux status                    # 自检与健
 
 ![xnux top](docs/img/xnux-top.png)
 
-需要多台集中查看、告警推送、AI 归因时：`sudo xnux connect --token xat_…`，不重启即切换为上报。详见 [docs/standalone.md](docs/standalone.zh-CN.md)。
+需要多台集中查看、告警推送、AI 分析时：`sudo xnux connect --token xat_…`，不重启即切换为上报。详见 [docs/standalone.md](docs/standalone.zh-CN.md)。
 
 ## 上报到 Xnux
 
@@ -49,7 +49,7 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 | 2. 刚才发了什么 | `xnux payload --last`（即 `/var/log/xnux/last_outgoing_payload.json`），与控制台审计台显示的原文和 sha256 对比 |
 | 3. 二进制是不是这份源码 | `git checkout vX.Y.Z && make agent VERSION=vX.Y.Z COMMIT=$(git rev-parse --short HEAD) && sha256sum bin/xnux-agent-linux-*`，与 Release 的 `SHA256SUMS` 对比；另有 cosign 签名 |
 
-探针只有一个出站请求（`POST /v1/ingest`，独立模式下连这个也没有），不监听网络端口（命令行走本机 Unix Socket）、不接收远程指令、没有自动升级。字段见 [docs/payload.md](docs/payload.zh-CN.md)，脱敏见 [docs/redaction.md](docs/redaction.zh-CN.md)，本地风险扫描读取什么、为什么见 [docs/risk-scan.md](docs/risk-scan.zh-CN.md)，不想用 root 运行见 [docs/least-privilege.md](docs/least-privilege.zh-CN.md)，隐藏源站 IP 见 [docs/relay.md](docs/relay.zh-CN.md)。
+探针只有一个出站请求（`POST /v1/ingest`，独立模式下连这个也没有），不监听网络端口（命令行走本机 Unix Socket）、不接收远程指令、不会自动更新。字段见 [docs/payload.md](docs/payload.zh-CN.md)，脱敏见 [docs/redaction.md](docs/redaction.zh-CN.md)，本地风险扫描读取什么、为什么见 [docs/risk-scan.md](docs/risk-scan.zh-CN.md)，不想用 root 运行见 [docs/least-privilege.md](docs/least-privilege.zh-CN.md)，隐藏源站 IP 见 [docs/relay.md](docs/relay.zh-CN.md)。
 
 ## 开发
 
