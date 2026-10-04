@@ -58,7 +58,7 @@ sudo sh /tmp/xnux-install.sh --upgrade --version vX.Y.Z
 xnux-agent version
 ```
 
-`--upgrade` asks nothing and changes nothing but the binary: `/etc/xnux/agent.yaml` (with its agent key), the state and spool in `/var/lib/xnux` and the systemd unit stay as they are. The previous binary is kept as `/usr/local/bin/xnux-agent.prev`; if the new one does not start, it is put back and the script exits with an error. `sudo sh /tmp/xnux-install.sh --rollback` puts the previous version back by hand. With `cosign` installed, the script also checks the binary's signature. Re-running the plain install command also updates the agent (it rewrites the unit file). The agent **never updates itself** and has no channel for remote commands.
+`--upgrade` asks nothing and changes nothing but the binary: `/etc/xnux/agent.yaml` (with its agent key), the state and spool in `/var/lib/xnux` and the systemd unit stay as they are. The previous binary is kept as `/usr/local/bin/xnux-agent.prev`; if the new one does not start, it is put back and the script exits with an error. `sudo sh /tmp/xnux-install.sh --rollback` puts the previous version back by hand. With `cosign` installed, the script also checks the binary's signature, made by this repository's release workflow; a GitHub release without one is not installed. Re-running the plain install command also updates the agent (it rewrites the unit file). The agent **never updates itself** and has no channel for remote commands.
 
 ## Uninstalling
 
@@ -103,7 +103,7 @@ Every file in a Release also has a cosign keyless signature (`.sig` + `.pem`):
 
 ```sh
 cosign verify-blob --certificate xnux-agent-linux-amd64.pem --signature xnux-agent-linux-amd64.sig \
-  --certificate-identity-regexp 'https://github.com/xyfu/xnux-agent/' \
+  --certificate-identity-regexp '^https://github\.com/xyfu/xnux-agent/\.github/workflows/release\.yml@refs/(heads/main|tags/v[^/]+)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com xnux-agent-linux-amd64
 ```
 

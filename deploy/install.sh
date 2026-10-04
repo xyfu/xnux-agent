@@ -176,7 +176,9 @@ fi
 
 # ---- download and verify ---------------------------------------------------
 
+MIRROR=1 # a --base-url of one's own may carry no signatures
 if [ -z "$BASE_URL" ]; then
+	MIRROR=0
 	if [ "$VERSION" = latest ]; then
 		BASE_URL="https://github.com/$REPO/releases/latest/download"
 	else
@@ -198,16 +200,20 @@ WANT="$(awk -v f="$NAME" '$2 == f || $2 == "*" f { print $1 }' "$TMP/SHA256SUMS"
 GOT="$(sha256 "$TMP/$NAME")"
 [ "$WANT" = "$GOT" ] || die "sha256 mismatch for $NAME: expected $WANT, got $GOT — not installing"
 say "sha256 verified: $GOT"
-# With cosign at hand, also check the release workflow's signature.
+# With cosign at hand, also check the signature: made by this repository's
+# release workflow, run from main or a tag. Every GitHub release carries
+# one, so a missing signature there stops the install.
 if command -v cosign >/dev/null 2>&1; then
 	if fetch "$BASE_URL/$NAME.sig" "$TMP/$NAME.sig" && fetch "$BASE_URL/$NAME.pem" "$TMP/$NAME.pem"; then
 		cosign verify-blob --signature "$TMP/$NAME.sig" --certificate "$TMP/$NAME.pem" \
-			--certificate-identity-regexp "^https://github.com/$REPO/" \
+			--certificate-identity-regexp "^https://github\.com/$REPO/\.github/workflows/release\.yml@refs/(heads/main|tags/v[^/]+)\$" \
 			--certificate-oidc-issuer https://token.actions.githubusercontent.com "$TMP/$NAME" >/dev/null 2>&1 ||
 			die "cosign signature check failed for $NAME — not installing"
 		say "cosign signature verified"
-	else
+	elif [ "$MIRROR" = 1 ]; then
 		say "no cosign signature at $BASE_URL; skipped that check"
+	else
+		die "no cosign signature for $NAME at $BASE_URL — not installing"
 	fi
 fi
 chmod 0755 "$TMP/$NAME"

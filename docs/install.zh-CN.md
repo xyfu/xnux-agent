@@ -58,7 +58,7 @@ sudo sh /tmp/xnux-install.sh --upgrade --version vX.Y.Z
 xnux-agent version
 ```
 
-`--upgrade` 不询问任何问题，只替换二进制：`/etc/xnux/agent.yaml`（含接入密钥）、`/var/lib/xnux` 中的状态与 spool、systemd 单元都保持原样。旧二进制保留为 `/usr/local/bin/xnux-agent.prev`；新版本没能启动时会自动换回旧版本并报错退出。手动回退用 `sudo sh /tmp/xnux-install.sh --rollback`。装有 `cosign` 时，脚本还会校验二进制的签名。直接重新执行安装命令同样可以更新（会重写 systemd 单元）。探针**不会自动更新**，也没有任何远程下发指令的通道。
+`--upgrade` 不询问任何问题，只替换二进制：`/etc/xnux/agent.yaml`（含接入密钥）、`/var/lib/xnux` 中的状态与 spool、systemd 单元都保持原样。旧二进制保留为 `/usr/local/bin/xnux-agent.prev`；新版本没能启动时会自动换回旧版本并报错退出。手动回退用 `sudo sh /tmp/xnux-install.sh --rollback`。装有 `cosign` 时，脚本还会校验二进制的签名（必须由本仓库的发版工作流签发）；GitHub 上的版本缺少签名时不会安装。直接重新执行安装命令同样可以更新（会重写 systemd 单元）。探针**不会自动更新**，也没有任何远程下发指令的通道。
 
 ## 卸载
 
@@ -103,7 +103,7 @@ Release 里每个文件另有 cosign keyless 签名（`.sig` + `.pem`）：
 
 ```sh
 cosign verify-blob --certificate xnux-agent-linux-amd64.pem --signature xnux-agent-linux-amd64.sig \
-  --certificate-identity-regexp 'https://github.com/xyfu/xnux-agent/' \
+  --certificate-identity-regexp '^https://github\.com/xyfu/xnux-agent/\.github/workflows/release\.yml@refs/(heads/main|tags/v[^/]+)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com xnux-agent-linux-amd64
 ```
 
