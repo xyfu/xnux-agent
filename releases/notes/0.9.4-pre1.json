@@ -1,0 +1,13 @@
+{
+  "level": "optional",
+  "highlights": {
+    "zh-Hans": [
+      "本机 xnux status 的健康度与控制台一致：有未结束的 P0 事件时，分数封顶 20；根分区写作“根分区”",
+      "装有 cosign 时，安装和升级脚本只接受本仓库发版流程签发的签名；GitHub 上的版本缺少签名时不会安装"
+    ],
+    "en": [
+      "The local xnux status scores health as the console does: an unresolved P0 event caps the score at 20, and / reads Root (/)",
+      "With cosign installed, the install and upgrade script accepts only signatures made by this repository's release workflow, and does not install a GitHub release that has none"
+    ]
+  }
+}
