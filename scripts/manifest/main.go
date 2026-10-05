@@ -255,7 +255,7 @@ func unchangedNotes(args []string) error {
 		return fmt.Errorf("notes: no earlier tag found (git fetch --tags?): %w", err)
 	}
 	last := strings.TrimSpace(string(tag))
-	changed, err := exec.Command("git", "diff", "--name-only", last+"..HEAD", "--", ".", ":(exclude)"+notesDir).Output()
+	changed, err := exec.Command("git", "diff", "--name-only", last+"..HEAD", "--", ".", ":(exclude)"+notesDir).Output() //nolint:gosec // the tag git describe printed
 	if err != nil {
 		return err
 	}
@@ -271,7 +271,7 @@ func unchangedNotes(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, append(b, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(path, append(b, '\n'), 0o644); err != nil { //nolint:gosec // a file of the repository
 		return err
 	}
 	fmt.Println("wrote", path)
