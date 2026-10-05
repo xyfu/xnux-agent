@@ -4,6 +4,7 @@
 //	go run ./scripts/manifest check
 //	go run ./scripts/manifest build -version v1.4.0 -bin bin -out bin/manifest.json
 //	go run ./scripts/manifest sign -in bin/manifest.json   # key in XNUX_MANIFEST_KEY
+//	go run ./scripts/manifest notes -version v1.4.1        # agent unchanged: the fixed notes
 //
 // Each release has releases/notes/{version}.json in the repository, added
 // in the pull request that makes the change: its level and highlights in
@@ -43,7 +44,7 @@ type notes struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fail(errors.New("usage: manifest check | build | sign"))
+		fail(errors.New("usage: manifest check | build | sign | notes"))
 	}
 	var err error
 	switch os.Args[1] {
@@ -53,6 +54,8 @@ func main() {
 		err = build(os.Args[2:])
 	case "sign":
 		err = sign(os.Args[2:])
+	case "notes":
+		err = unchangedNotes(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
@@ -226,4 +229,51 @@ func sign(args []string) error {
 	}
 	sig := ed25519.Sign(ed25519.NewKeyFromSeed(seed), body)
 	return os.WriteFile(*in+".ed25519", []byte(base64.StdEncoding.EncodeToString(sig)+"\n"), 0o644) //nolint:gosec // public
+}
+
+// unchangedNotes writes releases/notes/{version}.json for a release that
+// leaves the agent as it was (it ships with a server release under the
+// same tag): level optional and one fixed sentence. It refuses when the
+// file is there already, and when anything but release notes changed since
+// the latest tag: then the highlights are written by hand.
+func unchangedNotes(args []string) error {
+	fs := flag.NewFlagSet("notes", flag.ContinueOnError)
+	version := fs.String("version", "", "the release, e.g. v1.4.1")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	v := strings.TrimPrefix(*version, "v")
+	if _, ok := proto.ParseVersion(v); !ok {
+		return errors.New("notes: -version vX.Y.Z[-preN] is required")
+	}
+	path := filepath.Join(notesDir, v+".json")
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("notes: %s is there already", path)
+	}
+	tag, err := exec.Command("git", "describe", "--tags", "--abbrev=0", "--match", "v*").Output()
+	if err != nil {
+		return fmt.Errorf("notes: no earlier tag found (git fetch --tags?): %w", err)
+	}
+	last := strings.TrimSpace(string(tag))
+	changed, err := exec.Command("git", "diff", "--name-only", last+"..HEAD", "--", ".", ":(exclude)"+notesDir).Output()
+	if err != nil {
+		return err
+	}
+	if files := strings.Fields(string(changed)); len(files) > 0 {
+		return fmt.Errorf("notes: the agent changed since %s (%s): write %s by hand with its highlights",
+			last, strings.Join(files[:min(len(files), 3)], ", "), path)
+	}
+	n := notes{Level: proto.LevelOptional, Highlights: map[string][]string{
+		"zh-Hans": {fmt.Sprintf("与服务端 v%s 一起发布；探针本身与 %s 相同，不必升级", v, last)},
+		"en":      {fmt.Sprintf("Released alongside server v%s; the agent is the same as %s, no need to update", v, last)},
+	}}
+	b, err := json.MarshalIndent(n, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, append(b, '\n'), 0o644); err != nil {
+		return err
+	}
+	fmt.Println("wrote", path)
+	return nil
 }
