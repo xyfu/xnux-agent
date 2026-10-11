@@ -2,10 +2,12 @@
   "level": "optional",
   "highlights": {
     "zh-Hans": [
-      "与服务端 v0.9.4-pre2 一起发布；探针本身与 v0.9.4-pre1 相同，不必升级"
+      "与服务端 v0.9.4-pre2 一起发布",
+      "更新 Go 运行时，修复 http2 安全问题；探针只作为客户端连接 Xnux 服务端，影响很小，不急着升级"
     ],
     "en": [
-      "Released alongside server v0.9.4-pre2; the agent is the same as v0.9.4-pre1, no need to update"
+      "Released alongside server v0.9.4-pre2",
+      "Updates the Go runtime to fix http2 security issues; the agent only connects to the Xnux server as a client, so the impact is small and there is no rush to update"
     ]
   }
 }
