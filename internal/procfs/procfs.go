@@ -64,7 +64,10 @@ func (fs FS) Comm(pid int) string {
 type Status struct {
 	PPid int
 	UID  int // real uid
-	OK   bool
+	EUID int // effective uid; valid when HasEUID
+	// HasEUID: the Uid: line had its second column.
+	HasEUID bool
+	OK      bool
 }
 
 func (fs FS) Status(pid int) Status {
@@ -77,6 +80,11 @@ func (fs FS) Status(pid int) Status {
 			f := strings.Fields(v)
 			if len(f) > 0 {
 				st.UID, _ = strconv.Atoi(f[0])
+			}
+			if len(f) > 1 {
+				var err error
+				st.EUID, err = strconv.Atoi(f[1])
+				st.HasEUID = err == nil
 			}
 		}
 	}

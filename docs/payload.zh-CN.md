@@ -89,7 +89,7 @@ TLS ≥ 1.2 且校验证书（没有“跳过校验”选项，私有 CA 用 `tl
 | `sudo_auth_fail` | `user`、`attempts` |
 | `user_created` | `name`、`uid` |
 | `su_root` | `by_user` |
-| `proc_fileless`、`proc_deleted_exe`、`proc_stale_binary`、`proc_tmp_exec` | `pid`、`comm`、`exe`、`cmdline`、`uid`、`ppid_comm` |
+| `proc_fileless`、`proc_deleted_exe`、`proc_stale_binary`、`proc_tmp_exec` | `pid`、`comm`、`exe`、`cmdline`、`uid`（真实 uid）、`euid`（有效 uid，取 `/proc/<pid>/status` 中 `Uid:` 行第二列）、`user`（`uid` 在 `/etc/passwd` 里的用户名，没有就不带）、`ppid_comm` |
 | `proc_reverse_shell` | 同上，加 `remote`（已脱敏）；`key` 与其他进程事件一样是可执行文件路径 |
 | `swap_thrashing`、`mem_pressure` | `in_ps`、`available_mb`、`swap_used_mb` |
 | `db_public_access` | 仅当数据库端口监听在公网时：`port`、`service`、`bind_scope`（`all_interfaces` 所有网卡或 `public_address` 公网地址；从不上报地址本身）、`connections`、`sources[]`（已脱敏网段）；每端口每小时最多 1 条 |

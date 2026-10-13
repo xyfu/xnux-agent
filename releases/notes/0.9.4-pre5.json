@@ -3,11 +3,13 @@
   "highlights": {
     "zh-Hans": [
       "与服务端 v0.9.4-pre5 一起发布",
-      "脱敏不再把 systemd 服务名（例如 getty@tty1.service）当成邮箱打码，邮箱照常打码"
+      "脱敏不再把 systemd 服务名（例如 getty@tty1.service）当成邮箱打码，邮箱照常打码",
+      "进程类发现（临时目录中的程序等）增加有效 UID 和用户名，服务端据此支持“暂停提醒”"
     ],
     "en": [
       "Released alongside server v0.9.4-pre5",
-      "Redaction no longer masks systemd unit names such as getty@tty1.service as email addresses; email addresses are still masked"
+      "Redaction no longer masks systemd unit names such as getty@tty1.service as email addresses; email addresses are still masked",
+      "Process findings (programs in temp directories and the like) carry the effective UID and user name, which the server uses to pause alerts"
     ]
   }
 }

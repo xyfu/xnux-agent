@@ -89,7 +89,7 @@ Not collected: IP addresses, MAC addresses, network interface list, user list, i
 | `sudo_auth_fail` | `user`, `attempts` |
 | `user_created` | `name`, `uid` |
 | `su_root` | `by_user` |
-| `proc_fileless`, `proc_deleted_exe`, `proc_stale_binary`, `proc_tmp_exec` | `pid`, `comm`, `exe`, `cmdline`, `uid`, `ppid_comm` |
+| `proc_fileless`, `proc_deleted_exe`, `proc_stale_binary`, `proc_tmp_exec` | `pid`, `comm`, `exe`, `cmdline`, `uid` (real), `euid` (effective, from the second column of `Uid:` in `/proc/<pid>/status`), `user` (the login name of `uid` in `/etc/passwd`, left out when there is none), `ppid_comm` |
 | `proc_reverse_shell` | Same as above, plus `remote` (redacted); `key` is the binary's path, as for the other process events |
 | `swap_thrashing`, `mem_pressure` | `in_ps`, `available_mb`, `swap_used_mb` |
 | `db_public_access` | Only while a database port listens on the internet: `port`, `service`, `bind_scope` (`all_interfaces` or `public_address`; never the address), `connections`, `sources[]` (redacted networks); at most one an hour per port |

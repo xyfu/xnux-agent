@@ -170,6 +170,17 @@ func TestTmpAndDeleted(t *testing.T) {
 		}
 	}
 
+	// Who runs it (thread 0029): real and effective uid, and the login name.
+	if r := find(recs, inTmp.Process.Pid); r != nil {
+		if r.Data["uid"] != os.Getuid() || r.Data["euid"] != os.Geteuid() {
+			t.Errorf("uid %v euid %v, want %d %d", r.Data["uid"], r.Data["euid"], os.Getuid(), os.Geteuid())
+		}
+		got, _ := r.Data["user"].(string)
+		if want := userName("/", os.Getuid()); got != want {
+			t.Errorf("user %v, want %q", r.Data["user"], want)
+		}
+	}
+
 	// A stale binary is reported once a day per path, even for a new process.
 	run(t, upgraded, "30")
 	s2 := scanner()
@@ -203,5 +214,24 @@ func TestTmpAndDeleted(t *testing.T) {
 	s3.WhitelistComm = []string{"miner"}
 	if r := find(s3.Scan(), inTmp.Process.Pid); r != nil {
 		t.Errorf("whitelisted process reported: %+v", r)
+	}
+}
+
+func TestUserName(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "etc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	passwd := "root:x:0:0:root:/root:/bin/bash\n# comment\nrunner:x:1001:1001::/home/runner:/bin/bash\n:x:1002:1002::/:/bin/sh\n"
+	if err := os.WriteFile(filepath.Join(root, "etc/passwd"), []byte(passwd), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for uid, want := range map[int]string{0: "root", 1001: "runner", 1002: "", 4242: ""} {
+		if got := userName(root, uid); got != want {
+			t.Errorf("uid %d: %q, want %q", uid, got, want)
+		}
+	}
+	if got := userName(filepath.Join(root, "missing"), 0); got != "" {
+		t.Errorf("no passwd: %q", got)
 	}
 }
