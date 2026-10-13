@@ -1,0 +1,11 @@
+{
+  "level": "optional",
+  "highlights": {
+    "en": [
+      "Released alongside server v0.9.4-pre4; the agent is the same as v0.9.4-pre3, no need to update"
+    ],
+    "zh-Hans": [
+      "与服务端 v0.9.4-pre4 一起发布；探针本身与 v0.9.4-pre3 相同，不必升级"
+    ]
+  }
+}
