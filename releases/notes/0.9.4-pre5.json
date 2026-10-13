@@ -1,0 +1,13 @@
+{
+  "level": "optional",
+  "highlights": {
+    "zh-Hans": [
+      "与服务端 v0.9.4-pre5 一起发布",
+      "脱敏不再把 systemd 服务名（例如 getty@tty1.service）当成邮箱打码，邮箱照常打码"
+    ],
+    "en": [
+      "Released alongside server v0.9.4-pre5",
+      "Redaction no longer masks systemd unit names such as getty@tty1.service as email addresses; email addresses are still masked"
+    ]
+  }
+}
