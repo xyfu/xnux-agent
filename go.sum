@@ -7,8 +7,8 @@ github.com/oklog/ulid/v2 v2.1.2/go.mod h1:rcEKHmBBKfef9DhnvX7y1HZBYxjXb0cP5ExxNs
 github.com/pborman/getopt v0.0.0-20170112200414-7148bc3a4c30/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 h1:1EYB5IzjZawrrnELUi78f9fPu57HuXjmddZPjrls/28=
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.3/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=
-github.com/xyfu/xnux-shared v0.0.0-20261013171018-1d29b0da6f8c h1:sF1TNe1XhBh8Etu3YvqNHk7ZTqEX1t7+6kmGzNgEGRM=
-github.com/xyfu/xnux-shared v0.0.0-20261013171018-1d29b0da6f8c/go.mod h1:eIaVryUyhVJcFGWCzYwqoi9iThAc4peZmu7lMu8nG08=
+github.com/xyfu/xnux-shared v0.0.0-20261013171846-d7d5ed3b0a65 h1:BaboiL0whQv0t6ndZUI51BBfDp3gkIw2waikDTokFcw=
+github.com/xyfu/xnux-shared v0.0.0-20261013171846-d7d5ed3b0a65/go.mod h1:eIaVryUyhVJcFGWCzYwqoi9iThAc4peZmu7lMu8nG08=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
 go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
 golang.org/x/sys v0.48.0 h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=

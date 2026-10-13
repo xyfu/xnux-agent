@@ -274,13 +274,14 @@ func (s *Scanner) record(pid int, exe, comm, typ, sev string, now time.Time) raw
 	d := map[string]any{"pid": pid, "comm": comm, "exe": exe, "cmdline": rules.Cmdline(s.Proc.Read(pid, "cmdline"))}
 	if st.OK {
 		d["uid"] = st.UID
-		// Who runs it and as whom (thread 0029): a program that gained
-		// privileges or runs as root is never paused.
+		// As whom it runs and whether it holds capabilities (thread 0029):
+		// a program running as root, with privileges gained or with
+		// capabilities, is never paused.
 		if st.HasEUID {
 			d["euid"] = st.EUID
 		}
-		if name := userName(s.Root, st.UID); name != "" {
-			d["user"] = name
+		if st.Caps {
+			d["caps"] = true
 		}
 		if pc := s.Proc.Comm(st.PPid); pc != "" {
 			d["ppid_comm"] = pc
@@ -350,22 +351,4 @@ func decodeAddr(s string) string {
 		return ""
 	}
 	return netip.AddrPortFrom(addr.Unmap(), uint16(port)).String()
-}
-
-// userName is uid's login name from the host's /etc/passwd, or "" when it
-// has none.
-func userName(root string, uid int) string {
-	b, err := os.ReadFile(filepath.Join(root, "etc/passwd"))
-	if err != nil {
-		return ""
-	}
-	want := strconv.Itoa(uid)
-	for _, line := range strings.Split(string(b), "\n") {
-		// name:password:uid:gid:gecos:home:shell
-		f := strings.SplitN(line, ":", 4)
-		if len(f) >= 3 && f[2] == want && f[0] != "" {
-			return f[0]
-		}
-	}
-	return ""
 }

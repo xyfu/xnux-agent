@@ -67,7 +67,10 @@ type Status struct {
 	EUID int // effective uid; valid when HasEUID
 	// HasEUID: the Uid: line had its second column.
 	HasEUID bool
-	OK      bool
+	// Caps: CapEff is not all zero, the process holds some of root's
+	// powers (thread 0029); false when the line is missing.
+	Caps bool
+	OK   bool
 }
 
 func (fs FS) Status(pid int) Status {
@@ -76,6 +79,9 @@ func (fs FS) Status(pid int) Status {
 		if v, ok := strings.CutPrefix(line, "PPid:"); ok {
 			st.PPid, _ = strconv.Atoi(strings.TrimSpace(v))
 			st.OK = true
+		} else if v, ok := strings.CutPrefix(line, "CapEff:"); ok {
+			v = strings.TrimSpace(v)
+			st.Caps = v != "" && strings.Trim(v, "0") != ""
 		} else if v, ok := strings.CutPrefix(line, "Uid:"); ok {
 			f := strings.Fields(v)
 			if len(f) > 0 {
