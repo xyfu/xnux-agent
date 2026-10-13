@@ -120,7 +120,7 @@ auth.log/journal ┼─► 规则引擎（清洗 → 安全状态机 → 防抖�
 - 进程模型：`app` 在 `loop` 里打开本地存储（`internal/localstore`：事件 JSONL + 指标环形文件）和 Socket 服务（`internal/ipc`）；sender 只在有 token 时由 `connect()` 建立，独立模式下 batcher 的输出只保留最近一份（`xnux payload --next`），不建 spool、不发任何请求。
 - 热重载：`xnux connect / disconnect` 改写 `/etc/xnux/agent.yaml`（保持 0600，只替换顶层键）后发 `reload`；守护进程重读配置，token、endpoint、proxy、TLS 变化时拆掉旧 sender、复用 spool 建新的，并立即刷出一份注册载荷，其余采集不中断。
 - Socket：0660、属组 `xnux`（组不存在时仅 root 可用）；非组内用户连接得到 EACCES，命令行提示加入 `xnux` 组。请求 / 响应都是一行 JSON；单行请求超过 64 KB 即断开，同时最多 8 个连接，空闲 5 分钟断开。
-- 本地健康度（`internal/localhealth`）用与服务端相同的 `xnux-shared/health` 算法：输入取最近 1 小时的分钟记录和 24 小时内事件（24 小时内的事件视为未恢复）；最近 1 小时不足 50 分钟数据时显示 "collecting"。
+- 本地健康度（`internal/localhealth`）用与服务端相同的 `xnux-shared/health` 算法：输入取最近 1 小时的分钟记录和 24 小时内事件（24 小时内的事件视为未恢复）；最近 1 小时不足 50 分钟数据时显示 "collecting"。在网页或 App 里标记为缓存盘的挂载点，本地分数仍会计入：探针不知道这个标记。
 - CLI 资源：`xnux top` 每 2 秒一次 IPC，自身 CPU 约 0.15%。
 
 与规格的差异：
