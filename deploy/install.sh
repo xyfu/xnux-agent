@@ -217,7 +217,6 @@ if command -v cosign >/dev/null 2>&1; then
 	fi
 fi
 chmod 0755 "$TMP/$NAME"
-"$TMP/$NAME" version >/dev/null 2>&1 || die "the downloaded binary does not run on this machine"
 
 # ---- config ----------------------------------------------------------------
 
@@ -241,18 +240,26 @@ write_config() { # $1 = path
 }
 
 if [ "$DRY_RUN" = 1 ]; then
+	"$TMP/$NAME" version >/dev/null 2>&1 || die "the downloaded binary does not run on this machine"
 	write_config "$TMP/agent.yaml"
 	say "dry run: collecting one round; nothing is sent and nothing is installed"
 	"$TMP/$NAME" --dry-run --once --config "$TMP/agent.yaml" --state-dir "$TMP/state" --log-dir "$TMP/log"
 	exit 0
 fi
 
+# The new binary first runs from next to the old one, not from the temp
+# directory: the agent reports programs run from /tmp (proc_tmp_exec), and
+# an update should not raise one. Nothing has changed yet if it fails.
 install -d -m 0755 "$(dirname "$BIN")"
+install -m 0755 "$TMP/$NAME" "$BIN.new"
+"$BIN.new" version >/dev/null 2>&1 || {
+	rm -f "$BIN.new"
+	die "the downloaded binary does not run on this machine"
+}
 if [ -x "$BIN" ]; then
 	cp -p "$BIN" "$BIN.prev" # for --rollback
 	PREV_VERSION="$("$BIN" version 2>/dev/null || echo unknown)"
 fi
-install -m 0755 "$TMP/$NAME" "$BIN.new"
 mv -f "$BIN.new" "$BIN"
 ln -sf "$BIN" "$CLI"
 say "installed $BIN ($("$BIN" version)) and the $CLI command"
