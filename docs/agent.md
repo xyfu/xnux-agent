@@ -40,7 +40,7 @@ The implementation follows spec A6.3, strengthened in a few places on the princi
 | Rule | Spec | Implementation |
 | --- | --- | --- |
 | `private_key` | `PRIVATE KEY-----` | Also covers PGP's `PRIVATE KEY BLOCK-----` |
-| `kv_secret` | Bare words such as `\bpassword=…` | Also covers prefixed names (`MYSQL_ROOT_PASSWORD=`, `spring.datasource.password=`), JSON keys (`"db_password": "x"`), and `password …: value` (the MySQL temporary password log line) |
+| `kv_secret` | Bare words such as `\bpassword=…` | Also covers prefixed names (`MYSQL_ROOT_PASSWORD=`, `spring.datasource.password=`), JSON keys (`"db_password": "x"`), `password …: value` on the same line (the MySQL temporary password log line), the word after `is` / `was` (`the password is …`), and YAML block values (`password: |` and the lines indented under it). `password for <user>` is left alone: a user name follows, as in sshd's `Failed password for root` |
 | `cli_secret` `-pXXXX` | Command-line fields only | All strings (covers commands quoted in logs, such as sudo's `COMMAND=`) |
 | `ipv6` | Public unless in the private-network list | Masks only 2000::/3 (the range holding all public unicast addresses) and skips candidates directly adjacent to a word, so `std::string` and `ab::cd` are not hit |
 | Already-redacted values | — | kv / cli rules do not rewrite a value that is already a redaction marker; `token [REDACTED:api_key]` keeps its specific type and is not counted twice |

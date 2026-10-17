@@ -40,7 +40,7 @@
 | 规则 | 规格 | 实现 |
 | --- | --- | --- |
 | `private_key` | `PRIVATE KEY-----` | 另外覆盖 PGP 的 `PRIVATE KEY BLOCK-----` |
-| `kv_secret` | `\bpassword=…` 等裸词 | 另外覆盖带前缀的名字（`MYSQL_ROOT_PASSWORD=`、`spring.datasource.password=`）、JSON 键（`"db_password": "x"`）、`password …: 值`（MySQL 临时密码日志） |
+| `kv_secret` | `\bpassword=…` 等裸词 | 另外覆盖带前缀的名字（`MYSQL_ROOT_PASSWORD=`、`spring.datasource.password=`）、JSON 键（`"db_password": "x"`）、同一行里的 `password …: 值`（MySQL 临时密码日志）、`is` / `was` 后面的词（`the password is …`），以及 YAML 块写法的值（`password: |` 和下面缩进的几行）。`password for <用户名>` 不遮，后面跟的是用户名，例如 sshd 的 `Failed password for root` |
 | `cli_secret` `-pXXXX` | 仅命令行字段 | 所有字符串（覆盖日志里引用的命令，如 sudo 的 `COMMAND=`） |
 | `ipv6` | 不在私网列表即公网 | 只遮蔽 2000::/3（全部公网单播地址所在段），并排除紧贴单词的候选，避免 `std::string`、`ab::cd` 误伤 |
 | 已脱敏的值 | — | kv / cli 规则遇到已是替换符的值不再改写，`token [REDACTED:api_key]` 保留具体类型且不重复计数 |
