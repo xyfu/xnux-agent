@@ -1,0 +1,13 @@
+{
+  "level": "optional",
+  "highlights": {
+    "zh-Hans": [
+      "与服务端 v0.9.4-pre6 一起发布",
+      "更新时新版本改在 /usr/local/bin 试运行，不再从临时目录运行，更新本身不会再产生“临时目录中的程序”事件"
+    ],
+    "en": [
+      "Released alongside server v0.9.4-pre6",
+      "Updates test-run the new binary in /usr/local/bin, not a temp directory, so an update no longer raises a \"program in a temp directory\" event"
+    ]
+  }
+}
