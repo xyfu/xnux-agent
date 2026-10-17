@@ -60,7 +60,7 @@ Not collected: IP addresses, MAC addresses, network interface list, user list, i
 | `mem` | `total_mb`, `available_mb`, `used_pct` |
 | `swap` | `total_mb`, `used_mb`, `in_ps`, `out_ps` (pages swapped in / out per second) |
 | `disks[]` | `mount`, `fs`, `total_gb`, `free_gb`, `used_pct`, `inode_used_pct`, `growth_mb_h`, `days_to_full` |
-| `temps[]` | `name`, `c` (omitted when there are no sensors) |
+| `temps[]` | `name`, `c` (omitted when there are no sensors). `name` is the chip and its label, e.g. `coretemp Package id 0`; disks carry their kernel device name instead: `nvme0 Composite`, `drivetemp sda`. At most 16: per-core readings are dropped first |
 | `net` | `rx_bps`, `tx_bps`: bit/s received (download) and sent (upload) since the previous sample, summed over the included interfaces (integers). Omitted on the first sample, and on a sample where an interface appeared, went away or its counters went backwards. Only `/proc/net/dev` byte counters are read: no addresses, connections or interface names |
 
 ## `events[]`
