@@ -1,0 +1,19 @@
+{
+  "level": "recommended",
+  "highlights": {
+    "zh-Hans": [
+      "与服务端 v0.9.4-pre7 一起发布：先升级探针，或和服务端同时升级",
+      "新增 --redact-domains 和 sanitize.redact_domains：隐藏你列出的域名及其子域名，列表只存本机",
+      "hide_hostname 打开时，主机名里的域名部分也一起隐藏",
+      "磁盘温度传感器带上设备名（nvme0、sda），多块盘不再只报一块",
+      "脱敏修正：sudo 密码提示不再遮下一行；the password is 后面的密码和 YAML 块写法的值会遮住"
+    ],
+    "en": [
+      "Released with server v0.9.4-pre7: update the agent first, or together with the server",
+      "New --redact-domains and sanitize.redact_domains hide the domains you list and their subdomains; the list stays on the machine",
+      "With hide_hostname, the hostname's domain part is hidden too",
+      "Disk temperature sensors carry their device names (nvme0, sda), so every disk is reported",
+      "Redaction fixes: sudo password prompts no longer hide the next line; the password is X and YAML block values are hidden"
+    ]
+  }
+}
