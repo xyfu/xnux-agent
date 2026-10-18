@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/xyfu/xnux-shared/sanitize"
 )
 
 type Config struct {
@@ -65,6 +67,9 @@ type Procscan struct {
 type Sanitize struct {
 	MaskEmail     bool     `yaml:"mask_email"`
 	ExtraPatterns []string `yaml:"extra_patterns"`
+	// RedactDomains are hidden with their subdomains in everything sent
+	// (thread 0037). The list stays in this file: it is never reported.
+	RedactDomains []string `yaml:"redact_domains"`
 }
 
 // Network picks the interfaces summed into the throughput (spec v1.1
@@ -162,6 +167,11 @@ func (c *Config) Validate() error {
 	for _, p := range c.Sanitize.ExtraPatterns {
 		if _, err := regexp.Compile(p); err != nil {
 			errs = append(errs, fmt.Errorf("sanitize.extra_patterns: %q: %w", p, err))
+		}
+	}
+	for _, d := range c.Sanitize.RedactDomains {
+		if _, err := sanitize.NormalizeDomain(d); err != nil {
+			errs = append(errs, fmt.Errorf("sanitize.%w", err))
 		}
 	}
 	for _, p := range append(append([]string(nil), c.Network.Include...), c.Network.Exclude...) {

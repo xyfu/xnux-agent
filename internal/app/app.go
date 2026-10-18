@@ -131,7 +131,8 @@ func Run(ctx context.Context, o Options) error {
 	defer sampler.Close()
 	host := sampler.Host()
 
-	bopts := sanitize.Options{MaskEmail: cfg.Sanitize.MaskEmail, ExtraPatterns: cfg.Sanitize.ExtraPatterns}
+	bopts := sanitize.Options{MaskEmail: cfg.Sanitize.MaskEmail, ExtraPatterns: cfg.Sanitize.ExtraPatterns,
+		RedactDomains: cfg.Sanitize.RedactDomains}
 	if cfg.HideHostname {
 		bopts.HideHostname = host.Hostname
 	}

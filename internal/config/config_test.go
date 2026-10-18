@@ -51,12 +51,14 @@ func TestExampleFileParses(t *testing.T) {
 
 func TestValidation(t *testing.T) {
 	cases := map[string]string{
-		"bad token":      "token: abc\nendpoint: https://x",
-		"bad endpoint":   "token: xat_1\nendpoint: ftp://x",
-		"interval range": minimal + "interval_seconds: 5",
-		"flush range":    minimal + "flush_seconds: 500",
-		"bad regex":      minimal + "sanitize:\n  extra_patterns: ['(']",
-		"unknown field":  minimal + "bogus: 1",
+		"bad token":        "token: abc\nendpoint: https://x",
+		"bad endpoint":     "token: xat_1\nendpoint: ftp://x",
+		"interval range":   minimal + "interval_seconds: 5",
+		"flush range":      minimal + "flush_seconds: 500",
+		"bad regex":        minimal + "sanitize:\n  extra_patterns: ['(']",
+		"one-label domain": minimal + "sanitize:\n  redact_domains: [\"com\"]",
+		"bad domain":       minimal + "sanitize:\n  redact_domains: [\"exa mple.com\"]",
+		"unknown field":    minimal + "bogus: 1",
 	}
 	for name, y := range cases {
 		if _, err := Parse([]byte(y)); err == nil {
@@ -101,5 +103,17 @@ func TestPrintableMasksToken(t *testing.T) {
 	out := c.Printable()
 	if strings.Contains(out, "abcdefghijkl") || !strings.Contains(out, "****mnop") {
 		t.Fatalf("token not masked:\n%s", out)
+	}
+}
+
+// The list install.sh writes (thread 0037) loads as written; the barrier
+// normalizes the entries.
+func TestRedactDomains(t *testing.T) {
+	c, err := Parse([]byte(minimal + "sanitize:\n  redact_domains: [\"example.com\", \"*.Example.org\"]  # kept on this machine\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Sanitize.RedactDomains; len(got) != 2 || got[0] != "example.com" || got[1] != "*.Example.org" {
+		t.Fatalf("%v", got)
 	}
 }

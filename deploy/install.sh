@@ -25,6 +25,7 @@ VERSION="latest"
 BASE_URL=""
 DRY_RUN=0
 HIDE_HOSTNAME=0
+REDACT_DOMAINS=""
 CA_FILE=""
 LEAST_PRIV=0
 NO_START=0
@@ -50,7 +51,11 @@ Usage: install.sh [--token TOKEN] [options]
                        (a mirror of the release files, e.g. https://<server>/dl)
   --dry-run            download and verify, then show what the agent would send
                        (xnux-agent --dry-run --once); installs nothing
-  --hide-hostname      report the hostname as "host"
+  --hide-hostname      report the hostname as "host" (and hide its domain part)
+  --redact-domains LIST
+                       hide these domains and their subdomains in everything the
+                       agent sends, e.g. example.com,example.org; the list stays
+                       in this machine's config and is never reported
   --ca-file PATH       trust this CA for the endpoint (a private CA)
   --least-privilege    run as the unprivileged "xnux" user with only the
                        capabilities it needs, instead of root
@@ -86,6 +91,8 @@ while [ $# -gt 0 ]; do
 	--ca-file=*) CA_FILE="${1#*=}"; shift ;;
 	--dry-run) DRY_RUN=1; shift ;;
 	--hide-hostname) HIDE_HOSTNAME=1; shift ;;
+	--redact-domains) REDACT_DOMAINS="${2:-}"; shift 2 ;;
+	--redact-domains=*) REDACT_DOMAINS="${1#*=}"; shift ;;
 	--least-privilege) LEAST_PRIV=1; shift ;;
 	--no-start) NO_START=1; shift ;;
 	--add-user) ADD_USER="${2:-}"; shift 2 ;;
@@ -119,6 +126,17 @@ printf '%s' "$VERSION" | grep -Eq '^(latest|v[0-9A-Za-z.+-]+)$' || die "--versio
 if [ -n "$CA_FILE" ]; then
 	[ -r "$CA_FILE" ] || die "cannot read $CA_FILE"
 	printf '%s' "$CA_FILE" | grep -Eq '^/[A-Za-z0-9._/-]+$' || die "--ca-file must be an absolute path without spaces"
+fi
+# --redact-domains a.com,b.org → the YAML list ["a.com", "b.org"]; the agent
+# checks each entry again when it starts.
+DOMAINS_YAML=""
+if [ -n "$REDACT_DOMAINS" ]; then
+	for d in $(printf '%s' "$REDACT_DOMAINS" | tr ',' ' '); do
+		printf '%s' "$d" | grep -Eq '^(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+\.?$' ||
+			die "--redact-domains: \"$d\" is not a domain name like example.com"
+		DOMAINS_YAML="${DOMAINS_YAML:+$DOMAINS_YAML, }\"$d\""
+	done
+	DOMAINS_YAML="[$DOMAINS_YAML]"
 fi
 if [ "$DRY_RUN" = 0 ] && [ "$(id -u)" != 0 ]; then
 	die "run as root (sudo sh -s -- …), or add --dry-run to only preview"
@@ -231,6 +249,10 @@ write_config() { # $1 = path
 		fi
 		echo "endpoint: \"${ENDPOINT:-https://ingest.xnux.net}\""
 		if [ "$HIDE_HOSTNAME" = 1 ]; then echo "hide_hostname: true"; fi
+		if [ -n "$DOMAINS_YAML" ]; then
+			echo "sanitize:"
+			echo "  redact_domains: $DOMAINS_YAML  # kept on this machine, never reported"
+		fi
 		if [ -n "$CA_FILE" ]; then
 			echo "tls:"
 			echo "  ca_file: \"$CA_FILE\""
@@ -305,6 +327,15 @@ else
 			sed -i 's|^hide_hostname:.*|hide_hostname: true|' "$CONF"
 		else
 			echo "hide_hostname: true" >>"$CONF"
+		fi
+	fi
+	if [ -n "$DOMAINS_YAML" ]; then
+		if grep -q '^  redact_domains:' "$CONF"; then
+			sed -i "s|^  redact_domains:.*|  redact_domains: $DOMAINS_YAML|" "$CONF"
+		elif grep -q '^sanitize:' "$CONF"; then
+			sed -i "/^sanitize:/a\\  redact_domains: $DOMAINS_YAML" "$CONF"
+		else
+			printf 'sanitize:\n  redact_domains: %s\n' "$DOMAINS_YAML" >>"$CONF"
 		fi
 	fi
 	chmod 0600 "$CONF"

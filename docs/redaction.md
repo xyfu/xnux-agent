@@ -8,7 +8,7 @@ Implementation: [xnux-shared/sanitize](https://github.com/xyfu/xnux-shared/blob/
 
 ## Scope
 
-All rules are applied, in the order of the table below, to **every string value** in the payload (including event data, log lines, process command lines, event merge keys, map values and array elements); numbers, booleans and key names are not processed. Each string is first truncated to 4 KB. When `hide_hostname: true`, the real hostname is also replaced with `host` wherever it appears in any string.
+All rules are applied, in the order of the table below, to **every string value** in the payload (including event data, log lines, process command lines, event merge keys, map values and array elements); numbers, booleans and key names are not processed. Each string is first truncated to 4 KB. When `hide_hostname: true`, the real hostname is also replaced with `host` wherever it appears in any string, and its domain part (everything after the first label, when that leaves at least two: `web-01.example.com` → `example.com`) is hidden like the domains in `sanitize.redact_domains`.
 
 `agent_version`, `kernel` and `os`, which the agent generates itself, are trusted fields and skip the IP rules (otherwise a kernel version like `5.15.0.91` would be treated as an IP).
 
@@ -26,13 +26,14 @@ Long structures (private keys, JWTs) are handled first, so that later rules cann
 | 6 | `kv_secret` | `password=…`, `secret: …`, `token …`, `api_key=…`, `client_secret=…`, etc.; also covers prefixed names (`MYSQL_ROOT_PASSWORD=`, `spring.datasource.password=`) and JSON keys (`"db_password": "x"`) | Key name kept, value replaced with `[REDACTED:secret]` |
 | 7 | `cli_secret` | `--password=…`, `--token …`, `-pXXXX` (e.g. `mysql -psecret`) | `[REDACTED:secret]` |
 | 8 | `email` | Email addresses | First letter and domain kept: `a***@example.com` (skipped when `sanitize.mask_email: false`) |
+| 8a | `domain` | The domains in `sanitize.redact_domains` and their subdomains, any case; with `hide_hostname`, also the hostname's domain part. Not inside a longer name (`notexample.com`, `example.com.cn`, `example.community` stay); file names count (`example.com.conf`, `example.com-le-ssl.conf`) | The listed part only, the subdomain kept: `shop.[REDACTED:domain]`, `/etc/letsencrypt/live/www.[REDACTED:domain]/` |
 | 9 | `ipv4` | Public IPv4, also written with dashes as hostnames do (`vps-203-0-113-45.example.com`) | Last octet replaced with `x`: `203.0.113.x`, `vps-203-0-113-x.example.com`. Inside a DNS name (`static.45.113.0.203.clients.example.net`) the address may be written in reverse, so both ends are replaced: `static.x.113.0.x.clients.example.net` |
 | 10 | `ipv6` | Public IPv6 (2000::/3) | First 3 groups kept: `2400:cb00:1:x::` |
 | 11+ | `custom` | Your own regexes in `sanitize.extra_patterns` | `[REDACTED:custom]` |
 
 **Addresses that are not redacted**: private and reserved addresses are left as they are; they are useful for troubleshooting and do not expose a public identity. IPv4: `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.0.2.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `198.51.100.0/24`, `203.0.113.0/24`, `224.0.0.0/4`, `240.0.0.0/4`; IPv6: `::`, `::1`, `fc00::/7`, `fe80::/10`, `ff00::/8`, `2001:db8::/32`.
 
-The principle is "better to over-redact than to leak": a version number that looks like an IP, such as `v1.2.3.4`, is masked too; `Failed password for root` becomes `Failed password [REDACTED:secret] root`.
+The principle is "better to over-redact than to leak": a version number that looks like an IP, such as `v1.2.3.4`, is masked too.
 
 ## Configuration
 
@@ -41,7 +42,11 @@ sanitize:
   mask_email: true          # false keeps full email addresses
   extra_patterns:           # extra rules (Go RE2 regexes); matched parts become [REDACTED:custom]
     - 'order-[0-9]{8}'
+  redact_domains:           # hide these domains and their subdomains (logs, command lines, everything sent)
+    - example.com
 ```
+
+`redact_domains` stays in this machine's config and is never reported: the payload only counts the hits (`redactions.domain`). Set it at install with `--redact-domains example.com,example.org`. It applies to what is sent from then on; data already sent ages out with its retention.
 
 **Built-in rules cannot be turned off through configuration**; you can only add rules.
 

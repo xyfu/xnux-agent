@@ -8,7 +8,7 @@
 
 ## 作用范围
 
-对载荷中的**每一个字符串值**（包括事件数据、日志行、进程命令行、事件合并键、map 的值、数组元素）按下表顺序应用全部规则；不处理数字、布尔值和键名。单个字符串先截断到 4 KB。`hide_hostname: true` 时，所有字符串里出现的真实主机名也会换成 `host`。
+对载荷中的**每一个字符串值**（包括事件数据、日志行、进程命令行、事件合并键、map 的值、数组元素）按下表顺序应用全部规则；不处理数字、布尔值和键名。单个字符串先截断到 4 KB。`hide_hostname: true` 时，所有字符串里出现的真实主机名也会换成 `host`，主机名的域名部分（去掉第一段后至少还剩两段时：`web-01.example.com` → `example.com`）按 `sanitize.redact_domains` 的方式遮住。
 
 探针自己生成的 `agent_version`、`kernel`、`os` 是可信字段，跳过 IP 规则（否则 `5.15.0.91` 这样的内核版本会被当成 IP）。
 
@@ -26,13 +26,14 @@
 | 6 | `kv_secret` | `password=…`、`secret: …`、`token …`、`api_key=…`、`client_secret=…` 等；也覆盖带前缀的名字（`MYSQL_ROOT_PASSWORD=`、`spring.datasource.password=`）和 JSON 键（`"db_password": "x"`） | 保留键名，值换成 `[REDACTED:secret]` |
 | 7 | `cli_secret` | `--password=…`、`--token …`、`-pXXXX`（如 `mysql -psecret`） | `[REDACTED:secret]` |
 | 8 | `email` | 邮箱地址 | 保留首字母和域名：`a***@example.com`（`sanitize.mask_email: false` 时跳过） |
+| 8a | `domain` | `sanitize.redact_domains` 里的域名及其子域名，不区分大小写；`hide_hostname` 时还有主机名的域名部分。不命中更长的名字（`notexample.com`、`example.com.cn`、`example.community`）；文件名照样命中（`example.com.conf`、`example.com-le-ssl.conf`） | 只替换列出的那一段，保留子域名：`shop.[REDACTED:domain]`、`/etc/letsencrypt/live/www.[REDACTED:domain]/` |
 | 9 | `ipv4` | 公网 IPv4，包括主机名里用短横线写的形式（`vps-203-0-113-45.example.com`） | 末段换成 `x`：`203.0.113.x`、`vps-203-0-113-x.example.com`。在域名中间的（`static.45.113.0.203.clients.example.net`）可能是倒序写的，首尾两段都换掉：`static.x.113.0.x.clients.example.net` |
 | 10 | `ipv6` | 公网 IPv6（2000::/3） | 保留前 3 组：`2400:cb00:1:x::` |
 | 11+ | `custom` | `sanitize.extra_patterns` 中你自己的正则 | `[REDACTED:custom]` |
 
 **不脱敏的地址**：私网和保留地址保持原样——它们对排障有用，又不暴露公网身份。IPv4：`0.0.0.0/8`、`10.0.0.0/8`、`100.64.0.0/10`、`127.0.0.0/8`、`169.254.0.0/16`、`172.16.0.0/12`、`192.0.0.0/24`、`192.0.2.0/24`、`192.168.0.0/16`、`198.18.0.0/15`、`198.51.100.0/24`、`203.0.113.0/24`、`224.0.0.0/4`、`240.0.0.0/4`；IPv6：`::`、`::1`、`fc00::/7`、`fe80::/10`、`ff00::/8`、`2001:db8::/32`。
 
-原则是“宁可误伤不可漏掉”：`v1.2.3.4` 这种看起来像 IP 的版本号也会被遮蔽；`Failed password for root` 会变成 `Failed password [REDACTED:secret] root`。
+原则是“宁可误伤不可漏掉”：`v1.2.3.4` 这种看起来像 IP 的版本号也会被遮蔽。
 
 ## 配置
 
@@ -41,7 +42,11 @@ sanitize:
   mask_email: true          # false 时保留完整邮箱
   extra_patterns:           # 追加规则（Go RE2 正则），命中部分换成 [REDACTED:custom]
     - 'order-[0-9]{8}'
+  redact_domains:           # 隐藏这些域名及其子域名（日志、命令行等所有上报内容）
+    - example.com
 ```
+
+`redact_domains` 只保存在本机配置里，不会上报：载荷里只有命中次数（`redactions.domain`）。安装时可以用 `--redact-domains example.com,example.org` 设置。设置后，新上报的内容才会隐藏这些域名；已经上报的数据按保留期自然过期。
 
 **内置规则不能通过配置关闭**，只能追加。
 

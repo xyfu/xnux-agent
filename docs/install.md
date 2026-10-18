@@ -32,7 +32,8 @@ Within a few seconds of installing, the console's install wizard shows the raw c
 | `--version vX.Y.Z` | Install a specific version (default: latest) |
 | `--base-url URL` | Download binaries from here (a mirror of the Release files) instead of GitHub Releases |
 | `--dry-run` | After downloading and verifying, run `xnux-agent --dry-run --once` once and print what would be sent; **installs nothing and sends no data**, and does not need root |
-| `--hide-hostname` | Replace the reported hostname with `host` |
+| `--hide-hostname` | Replace the reported hostname with `host`, and hide its domain part |
+| `--redact-domains a.com,b.org` | Hide these domains and their subdomains in everything sent; written to `sanitize.redact_domains`, kept on the machine, never reported |
 | `--ca-file PATH` | Trust this CA when the reporting endpoint uses a private CA |
 | `--least-privilege` | Run as the dedicated user `xnux` with a minimal capability set; see [least-privilege.md](least-privilege.md) |
 | `--no-start` | Install but do not start |

@@ -32,7 +32,8 @@ curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/install.s
 | `--version vX.Y.Z` | 安装指定版本（默认最新） |
 | `--base-url URL` | 从这里下载二进制（Release 文件的镜像），而不是 GitHub Releases |
 | `--dry-run` | 下载并校验后运行一次 `xnux-agent --dry-run --once`，把将要发送的内容打印出来；**不安装任何东西、不发送任何数据**，不需要 root |
-| `--hide-hostname` | 上报的主机名一律替换为 `host` |
+| `--hide-hostname` | 上报的主机名一律替换为 `host`，并遮住主机名的域名部分 |
+| `--redact-domains a.com,b.org` | 在所有上报内容里隐藏这些域名及其子域名；写入 `sanitize.redact_domains`，只保存在本机，不上报 |
 | `--ca-file PATH` | 上报地址使用私有 CA 时，信任该 CA |
 | `--least-privilege` | 以专用用户 `xnux` + 最小能力集运行，见 [least-privilege.zh-CN.md](least-privilege.zh-CN.md) |
 | `--no-start` | 安装但不启动 |
