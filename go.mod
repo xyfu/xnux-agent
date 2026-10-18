@@ -8,7 +8,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
-	github.com/xyfu/xnux-shared v0.0.0-20261018024320-8ee06b281ed1
+	github.com/xyfu/xnux-shared v0.0.0-20261018032439-065a4cb69853
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/sys v0.48.0
 )
