@@ -51,6 +51,13 @@ else
 	echo "FAIL dry-run: $(printf '%s' "$out" | tail -5)"
 	fails=$((fails + 1))
 fi
+# Not root: host.run_as says so (thread 0040).
+if printf '%s' "$out" | grep -q '"run_as": *"least_privilege"'; then
+	echo "PASS dry-run as nobody reports run_as least_privilege"
+else
+	echo "FAIL run_as as nobody: $(printf '%s' "$out" | grep -o '"run_as": *"[a-z_]*"' || echo missing)"
+	fails=$((fails + 1))
+fi
 
 out=$(x "sh /tmp/i.sh --token xat_0000000000000000000000 --base-url http://127.0.0.1:$((port + 1)) 2>&1" || true)
 if printf '%s' "$out" | grep -q 'sha256 mismatch' && ! x 'test -e /usr/local/bin/xnux-agent -o -e /etc/xnux'; then

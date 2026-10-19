@@ -101,6 +101,7 @@ func (s *Sampler) hostInfo() proto.Host {
 		Cores:    s.cores,
 		Uptime:   readUptime(s.opts.ProcRoot),
 		Virt:     s.virt,
+		RunAs:    runAs(geteuid()),
 	}
 	if h.Hostname == "" {
 		h.Hostname, _ = os.Hostname()
@@ -109,4 +110,17 @@ func (s *Sampler) hostInfo() proto.Host {
 		h.Hostname = "host"
 	}
 	return h
+}
+
+// geteuid is os.Geteuid, replaceable in tests.
+var geteuid = os.Geteuid
+
+// runAs is host.run_as for an effective uid: root or least_privilege,
+// nothing else about the account (thread 0040, C-AG-HOST-RUN-AS). It is
+// what the owner is shown about how much Xnux can see on this machine.
+func runAs(euid int) string {
+	if euid == 0 {
+		return proto.RunAsRoot
+	}
+	return proto.RunAsLeastPrivilege
 }

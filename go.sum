@@ -15,6 +15,8 @@ github.com/xyfu/xnux-shared v0.0.0-20261018024320-8ee06b281ed1 h1:aCJVVMv2/38SIV
 github.com/xyfu/xnux-shared v0.0.0-20261018024320-8ee06b281ed1/go.mod h1:eIaVryUyhVJcFGWCzYwqoi9iThAc4peZmu7lMu8nG08=
 github.com/xyfu/xnux-shared v0.0.0-20261018032439-065a4cb69853 h1:lrssdZ87tVQRuJP7p1g+lprnwL+w4HeHVjWrK+a2+wY=
 github.com/xyfu/xnux-shared v0.0.0-20261018032439-065a4cb69853/go.mod h1:eIaVryUyhVJcFGWCzYwqoi9iThAc4peZmu7lMu8nG08=
+github.com/xyfu/xnux-shared v0.0.0-20261019171325-b29fd5bed3ed h1:P0KSPZJIDuqP62m7eInlLUpZqz/7Dy8rWvROi1jbj+c=
+github.com/xyfu/xnux-shared v0.0.0-20261019171325-b29fd5bed3ed/go.mod h1:eIaVryUyhVJcFGWCzYwqoi9iThAc4peZmu7lMu8nG08=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
 go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
 golang.org/x/sys v0.48.0 h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=

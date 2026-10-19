@@ -648,7 +648,7 @@ func (a *agent) refreshHost(force bool) {
 	}
 	p := a.sentHost
 	changed := h.Hostname != p.Hostname || h.OS != p.OS || h.Kernel != p.Kernel || h.Arch != p.Arch ||
-		h.Cores != p.Cores || h.Virt != p.Virt || !slices.Equal(h.Capabilities, p.Capabilities)
+		h.Cores != p.Cores || h.Virt != p.Virt || h.RunAs != p.RunAs || !slices.Equal(h.Capabilities, p.Capabilities)
 	if force || changed {
 		a.batcher.SetHost(h)
 		a.sentHost = h

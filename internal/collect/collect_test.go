@@ -234,6 +234,13 @@ func TestHost(t *testing.T) {
 		h.Cores != want.Cores || h.Uptime != want.Uptime || h.Virt != want.Virt {
 		t.Fatalf("host = %+v\nwant %+v", h, want)
 	}
+	for euid, want := range map[int]string{0: "root", 1000: "least_privilege", 999: "least_privilege"} {
+		geteuid = func() int { return euid }
+		if got := s.Host().RunAs; got != want {
+			t.Errorf("euid %d: run_as %q, want %q", euid, got, want)
+		}
+	}
+	geteuid = os.Geteuid
 }
 
 func TestVirtContainer(t *testing.T) {
