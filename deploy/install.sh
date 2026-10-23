@@ -285,6 +285,12 @@ fi
 mv -f "$BIN.new" "$BIN"
 ln -sf "$BIN" "$CLI"
 say "installed $BIN ($("$BIN" version)) and the $CLI command"
+# The licence and the third-party notices, from the binary itself.
+DOC=/usr/share/doc/xnux-agent
+if install -d -m 0755 "$DOC" 2>/dev/null; then
+	"$BIN" license >"$DOC/LICENSE" 2>/dev/null || rm -f "$DOC/LICENSE"
+	"$BIN" notices >"$DOC/THIRD_PARTY_NOTICES" 2>/dev/null || rm -f "$DOC/THIRD_PARTY_NOTICES"
+fi
 
 # The "xnux" group may use the CLI (the agent's socket is 0660 root:xnux).
 if ! getent group xnux >/dev/null 2>&1; then

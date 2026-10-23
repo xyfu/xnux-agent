@@ -19,6 +19,8 @@ jobs:
       - run: go vet ./...
       - name: release notes (releases/notes/*.json, both languages)
         run: go run ./scripts/manifest check
+      - name: third-party notices match the linked modules (thread 0045)
+        run: go run ./scripts/notices -check
       - run: go test -race ./...
       - uses: golangci/golangci-lint-action@v8
         with:

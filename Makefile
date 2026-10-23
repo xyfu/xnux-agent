@@ -21,7 +21,7 @@ agent:
 
 ## dist: everything a release publishes -> bin/
 dist: agent
-	cp deploy/install.sh deploy/uninstall.sh bin/
+	cp deploy/install.sh deploy/uninstall.sh LICENSE THIRD_PARTY_NOTICES bin/
 	# A release's install.sh installs that release: GitHub never serves a
 	# pre-release as releases/latest.
 	case "$(VERSION)" in *-dirty|*-g[0-9a-f]*) ;; v*) sed -i 's/^VERSION="latest"$$/VERSION="$(VERSION)"/' bin/install.sh ;; esac

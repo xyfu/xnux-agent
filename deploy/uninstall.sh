@@ -31,6 +31,7 @@ rm -f /etc/systemd/system/xnux-agent.service
 if [ -d /run/systemd/system ]; then systemctl daemon-reload || true; fi
 rm -f /usr/local/bin/xnux-agent
 [ -L /usr/local/bin/xnux ] && rm -f /usr/local/bin/xnux
+rm -rf /usr/share/doc/xnux-agent
 echo "xnux: agent stopped and removed"
 
 if [ "$PURGE" = 1 ]; then

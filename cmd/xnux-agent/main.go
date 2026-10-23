@@ -21,6 +21,7 @@ import (
 	"github.com/xyfu/xnux-agent/internal/app"
 	"github.com/xyfu/xnux-agent/internal/cli"
 	"github.com/xyfu/xnux-agent/internal/ipc"
+	"github.com/xyfu/xnux-agent/internal/notices"
 )
 
 // Set at build time via -ldflags "-X main.version=… -X main.commit=…".
@@ -95,8 +96,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	logDir := fs.String("log-dir", "/var/log/xnux", "agent.log and mirror file directory")
 	socket := fs.String("socket", envOr("XNUX_SOCKET", ipc.DefaultPath), "local socket the xnux CLI talks to")
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "usage: xnux-agent [run|version|cli …] [flags]\n\nflags:\n")
+		fmt.Fprintf(stderr, "usage: xnux-agent [run|version|license|notices|cli …] [flags]\n\nflags:\n")
 		fs.PrintDefaults()
+	}
+
+	// The licence and the third-party notices travel with the binary
+	// (thread 0045).
+	if len(args) == 1 && args[0] == "license" {
+		fmt.Fprint(stdout, notices.License)
+		return 0
+	}
+	if len(args) == 1 && args[0] == "notices" {
+		fmt.Fprint(stdout, notices.ThirdParty)
+		return 0
 	}
 
 	cmd := "run"
