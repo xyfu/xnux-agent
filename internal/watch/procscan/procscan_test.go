@@ -42,11 +42,25 @@ func find(recs []raw.Record, pid int) *raw.Record {
 }
 
 // copyBinary copies sleep(1) into dir so it can be run from there.
+// TestMain lets a copy of the test binary stand in for a long-running
+// program under any name: the system's sleep may be a multi-call binary
+// (uutils coreutils on Ubuntu 26.04) that exits when run as "miner".
+func TestMain(m *testing.M) {
+	if os.Getenv(sleepEnv) != "" {
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+const sleepEnv = "XNUX_PROCSCAN_SLEEP"
+
+// copyBinary copies the test binary to dir/name; run starts it sleeping.
 func copyBinary(t *testing.T, dir, name string) string {
 	t.Helper()
-	src, err := exec.LookPath("sleep")
+	src, err := os.Executable()
 	if err != nil {
-		t.Skip("no sleep binary")
+		t.Skip(err)
 	}
 	in, err := os.Open(src)
 	if err != nil {
@@ -68,6 +82,7 @@ func copyBinary(t *testing.T, dir, name string) string {
 func run(t *testing.T, name string, args ...string) *exec.Cmd {
 	t.Helper()
 	cmd := exec.Command(name, args...)
+	cmd.Env = append(os.Environ(), sleepEnv+"=1")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
