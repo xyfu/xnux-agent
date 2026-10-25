@@ -49,6 +49,9 @@ type Scanner struct {
 
 	// Interval and Jitter default to 300 s and 30 s.
 	Interval, Jitter time.Duration
+	// Self is the agent's PID (0: this process): it and its children
+	// (journalctl, sshd -T) are never reported (thread 0046).
+	Self int
 
 	mu       sync.Mutex
 	reported map[string]string // "pid:starttime" → exe, once per process, persisted
@@ -208,6 +211,10 @@ func (s *Scanner) Scan() []raw.Record {
 		if s.whitelisted(strings.TrimSuffix(exe, deleted), comm) {
 			continue
 		}
+		// Before classify, which remembers stale binaries by path.
+		if s.ours(pid) {
+			continue
+		}
 		typ, sev := s.classify(pid, exe, comm, now)
 		if typ == "" {
 			continue
@@ -227,9 +234,30 @@ func (s *Scanner) Scan() []raw.Record {
 	return out
 }
 
+// exists reports whether path is a regular file: a deleted
+// executable's old path must name a program, not "/" or a directory.
 func (s *Scanner) exists(path string) bool {
-	_, err := os.Stat(filepath.Join(s.Root, path))
-	return err == nil
+	fi, err := os.Stat(filepath.Join(s.Root, path))
+	return err == nil && fi.Mode().IsRegular()
+}
+
+// ours reports whether pid should never be judged: the agent itself and
+// its children, and the kernel's user-mode helpers (children of kthreadd,
+// such as bpfilter_umh, whose exe reads "/ (deleted)" and comm "none";
+// thread 0046).
+func (s *Scanner) ours(pid int) bool {
+	self := s.Self
+	if self == 0 {
+		self = os.Getpid()
+	}
+	if pid == self {
+		return true
+	}
+	st := s.Proc.Status(pid)
+	if !st.OK {
+		return false
+	}
+	return st.PPid == self || st.PPid == 2 || s.Proc.Comm(st.PPid) == "kthreadd"
 }
 
 func (s *Scanner) classify(pid int, exe, comm string, now time.Time) (typ, sev string) {
@@ -240,6 +268,11 @@ func (s *Scanner) classify(pid int, exe, comm string, now time.Time) (typ, sev s
 		return proto.EventProcFileless, proto.SeverityP1
 	}
 	if orig, ok := strings.CutSuffix(exe, deleted); ok {
+		// The old path is now a directory or something else that cannot
+		// have been the program (a kernel helper's "/"): nothing to say.
+		if fi, err := os.Stat(filepath.Join(s.Root, orig)); err == nil && !fi.Mode().IsRegular() {
+			return "", ""
+		}
 		switch {
 		case hasPrefixAny(orig, filelessDirs):
 			return proto.EventProcFileless, proto.SeverityP1

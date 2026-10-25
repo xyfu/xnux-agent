@@ -1,6 +1,7 @@
 package procscan
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -28,8 +29,10 @@ func TestDecodeAddr(t *testing.T) {
 	}
 }
 
+// scanner scans this host; Self is no real process, so the test's own
+// children count like anyone's.
 func scanner() *Scanner {
-	return &Scanner{Proc: procfs.FS{Root: "/proc"}, Root: "/"}
+	return &Scanner{Proc: procfs.FS{Root: "/proc"}, Root: "/", Self: -1}
 }
 
 func find(recs []raw.Record, pid int) *raw.Record {
@@ -229,5 +232,51 @@ func TestTmpAndDeleted(t *testing.T) {
 	s3.WhitelistComm = []string{"miner"}
 	if r := find(s3.Scan(), inTmp.Process.Pid); r != nil {
 		t.Errorf("whitelisted process reported: %+v", r)
+	}
+}
+
+// Not judged (thread 0046): the kernel's user-mode helpers (bpfilter_umh,
+// a child of kthreadd: exe "/ (deleted)", comm "none"), the agent and its
+// children, and a deleted executable whose old path is no longer a file.
+// A real stale binary still is.
+func TestSkipsKernelHelpersAndSelf(t *testing.T) {
+	root := t.TempDir()
+	proc := filepath.Join(root, "proc")
+	if err := os.MkdirAll(filepath.Join(root, "usr/bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "usr/bin/daemon"), []byte("new build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "opt/tool"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fake := func(pid, ppid int, comm, exe string) {
+		t.Helper()
+		dir := filepath.Join(proc, strconv.Itoa(pid))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.WriteFile(filepath.Join(dir, "comm"), []byte(comm+"\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(dir, "status"), []byte(fmt.Sprintf("Name:\t%s\nPPid:\t%d\nUid:\t0\t0\t0\t0\n", comm, ppid)), 0o644)
+		_ = os.WriteFile(filepath.Join(dir, "stat"), []byte(fmt.Sprintf("%d (%s) S %d 0 0 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 %d 0 0", pid, comm, ppid, 1000+pid)), 0o644)
+		if exe != "" {
+			if err := os.Symlink(exe, filepath.Join(dir, "exe")); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	fake(2, 0, "kthreadd", "")
+	fake(300, 2, "none", "/ (deleted)")                       // bpfilter_umh
+	fake(301, 1, "oddball", "/ (deleted)")                    // "/" even without kthreadd
+	fake(302, 1, "tool", "/opt/tool (deleted)")               // old path is now a directory
+	fake(400, 1, "xnux-agent", "/usr/bin/daemon (deleted)")   // the agent itself
+	fake(401, 400, "journalctl", "/usr/bin/daemon (deleted)") // its child
+	fake(500, 1, "daemon", "/usr/bin/daemon (deleted)")       // upgraded, not restarted
+
+	s := &Scanner{Proc: procfs.FS{Root: proc}, Root: root, Self: 400}
+	recs := s.Scan()
+	if len(recs) != 1 || recs[0].Data["pid"] != 500 || recs[0].Kind != "proc_stale_binary" {
+		t.Fatalf("records: %+v", recs)
 	}
 }
