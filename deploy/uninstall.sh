@@ -2,6 +2,8 @@
 # Removes the Xnux agent installed by install.sh.
 #
 #   curl -fsSL https://github.com/xyfu/xnux-agent/releases/latest/download/uninstall.sh | sudo sh
+#   (latest/ skips pre-releases: for one, use …/releases/download/<tag>/uninstall.sh
+#   or the server's <base>/uninstall.sh that install.sh printed)
 #   … | sudo sh -s -- --purge     # also delete config, state, logs, the xnux user and group
 set -eu
 

@@ -49,7 +49,7 @@ TLS ≥ 1.2 with certificate verification (there is no "skip verification" optio
 | `capabilities` | Collectors actually enabled: `metrics`, `temps`, `systemd`, `kmsg`, `authlog`, `procscan` |
 | `run_as` | `root` or `least_privilege`: whether the agent runs as root (effective uid 0) or as an unprivileged user ([least-privilege mode](least-privilege.md)). Only this one value: no user name, no uid, no path; nothing extra is read to get it. **Why:** the app's machine page tells you how much Xnux can see on this machine, and why some checks show "not monitored" there, so you can check which mode you installed. Older agents leave it out |
 
-Not collected: IP addresses, MAC addresses, network interface list, user list, installed software, file contents, environment variables.
+Not collected: IP addresses, MAC addresses, network interface list, user list, installed software, file contents (one exception: when a service crashes or fails to start, up to 50 of its log lines from the last 10 minutes go with the event as `log_tail` below, redacted on the host first), environment variables.
 
 ## `metrics[]`
 
